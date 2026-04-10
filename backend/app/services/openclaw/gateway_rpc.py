@@ -134,6 +134,8 @@ GATEWAY_METHODS = [
     "chat.history",
     "chat.abort",
     "chat.send",
+    "browser.status",
+    "channels.reauth",
 ]
 
 GATEWAY_EVENTS = [

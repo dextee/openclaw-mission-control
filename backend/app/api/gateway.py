@@ -11,6 +11,9 @@ from app.core.auth import AuthContext, get_auth_context
 from app.db.session import get_session
 from app.schemas.common import OkResponse
 from app.schemas.gateway_api import (
+    BrowserStatusResponse,
+    ChannelReauthResponse,
+    ChannelsAuthStatusResponse,
     GatewayCommandsResponse,
     GatewayResolveQuery,
     GatewaySessionHistoryResponse,
@@ -151,4 +154,56 @@ async def gateway_commands(
         protocol_version=PROTOCOL_VERSION,
         methods=GATEWAY_METHODS,
         events=GATEWAY_EVENTS,
+    )
+
+
+@router.get("/browser-status", response_model=BrowserStatusResponse)
+async def gateway_browser_status(
+    params: GatewayResolveQuery = RESOLVE_INPUT_DEP,
+    session: AsyncSession = SESSION_DEP,
+    auth: AuthContext = AUTH_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> BrowserStatusResponse:
+    """Return browser context health for zero-token providers."""
+    service = GatewaySessionService(session)
+    return await service.get_browser_status(
+        params=params,
+        organization_id=ctx.organization.id,
+        user=auth.user,
+    )
+
+
+@router.get("/channels/auth-status", response_model=ChannelsAuthStatusResponse)
+async def gateway_channels_auth_status(
+    params: GatewayResolveQuery = RESOLVE_INPUT_DEP,
+    session: AsyncSession = SESSION_DEP,
+    auth: AuthContext = AUTH_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> ChannelsAuthStatusResponse:
+    """Return auth validity state for all channels (web providers)."""
+    service = GatewaySessionService(session)
+    return await service.get_channels_auth_status(
+        params=params,
+        organization_id=ctx.organization.id,
+        user=auth.user,
+    )
+
+
+@router.post(
+    "/channels/{channel_id}/reauth", response_model=ChannelReauthResponse
+)
+async def gateway_channel_reauth(
+    channel_id: str,
+    params: GatewayResolveQuery = RESOLVE_INPUT_DEP,
+    session: AsyncSession = SESSION_DEP,
+    auth: AuthContext = AUTH_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> ChannelReauthResponse:
+    """Trigger reauthentication for a zero-token channel."""
+    service = GatewaySessionService(session)
+    return await service.reauth_channel(
+        channel_id=channel_id,
+        params=params,
+        organization_id=ctx.organization.id,
+        user=auth.user,
     )

@@ -13,6 +13,11 @@ from app.core.logging import TRACE_LEVEL
 from app.models.boards import Board
 from app.models.gateways import Gateway
 from app.schemas.gateway_api import (
+    BrowserContextStatus,
+    BrowserStatusResponse,
+    ChannelAuthStatus,
+    ChannelReauthResponse,
+    ChannelsAuthStatusResponse,
     GatewayResolveQuery,
     GatewaySessionHistoryResponse,
     GatewaySessionMessageRequest,
@@ -395,3 +400,113 @@ class GatewaySessionService(OpenClawDBService):
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=str(exc),
             ) from exc
+
+    async def get_browser_status(
+        self,
+        *,
+        params: GatewayResolveQuery,
+        organization_id: UUID,
+        user: User | None,
+    ) -> BrowserStatusResponse:
+        """Call browser.status on the connected gateway."""
+        board, config, _ = await self.resolve_gateway(
+            params, user=user, organization_id=organization_id
+        )
+        self._require_same_org(board, organization_id)
+        try:
+            result = await openclaw_call("browser.status", config=config)
+            if isinstance(result, dict):
+                raw_ctx = result.get("contexts", [])
+                contexts = [
+                    BrowserContextStatus(
+                        provider=item.get("provider", ""),
+                        healthy=bool(item.get("healthy")),
+                        cdp_connected=bool(item.get("cdpConnected")),
+                        last_checked_at=item.get("lastCheckedAt"),
+                    )
+                    for item in raw_ctx
+                    if isinstance(item, dict)
+                ]
+                return BrowserStatusResponse(contexts=contexts)
+            return BrowserStatusResponse(contexts=[])
+        except OpenClawGatewayError as exc:
+            return BrowserStatusResponse(
+                contexts=[], error=normalize_gateway_error_message(str(exc))
+            )
+
+    async def get_channels_auth_status(
+        self,
+        *,
+        params: GatewayResolveQuery,
+        organization_id: UUID,
+        user: User | None,
+    ) -> ChannelsAuthStatusResponse:
+        """Call channels.status and extract auth fields."""
+        board, config, _ = await self.resolve_gateway(
+            params, user=user, organization_id=organization_id
+        )
+        self._require_same_org(board, organization_id)
+        try:
+            result = await openclaw_call("channels.status", config=config)
+            if not isinstance(result, dict):
+                return ChannelsAuthStatusResponse(channels=[])
+            channel_accounts = result.get("channelAccounts", {})
+            if not isinstance(channel_accounts, dict):
+                return ChannelsAuthStatusResponse(channels=[])
+            channels: list[ChannelAuthStatus] = []
+            for channel_id, accounts in channel_accounts.items():
+                if not isinstance(accounts, list):
+                    continue
+                for acct in accounts:
+                    if not isinstance(acct, dict):
+                        continue
+                    channels.append(
+                        ChannelAuthStatus(
+                            channel_id=channel_id,
+                            auth_valid=bool(acct.get("authValid", True)),
+                            needs_reauth=bool(acct.get("needsReauth", False)),
+                            cookie_expiry=acct.get("cookieExpiry"),
+                            provider_type=acct.get("providerType", "api"),
+                        )
+                    )
+            return ChannelsAuthStatusResponse(channels=channels)
+        except OpenClawGatewayError as exc:
+            return ChannelsAuthStatusResponse(
+                channels=[], error=normalize_gateway_error_message(str(exc))
+            )
+
+    async def reauth_channel(
+        self,
+        *,
+        channel_id: str,
+        params: GatewayResolveQuery,
+        organization_id: UUID,
+        user: User | None,
+    ) -> ChannelReauthResponse:
+        """Trigger reauthentication for a specific channel."""
+        board, config, _ = await self.resolve_gateway(
+            params, user=user, organization_id=organization_id
+        )
+        self._require_same_org(board, organization_id)
+        try:
+            result = await openclaw_call(
+                "channels.reauth", {"channel": channel_id}, config=config
+            )
+            if isinstance(result, dict):
+                return ChannelReauthResponse(
+                    status=result.get("status", "error"),
+                    auth_url=result.get("authUrl"),
+                    channel_id=channel_id,
+                    error=result.get("error"),
+                )
+            return ChannelReauthResponse(
+                status="error",
+                channel_id=channel_id,
+                error="Unexpected response from gateway",
+            )
+        except OpenClawGatewayError as exc:
+            return ChannelReauthResponse(
+                status="error",
+                channel_id=channel_id,
+                error=normalize_gateway_error_message(str(exc)),
+            )

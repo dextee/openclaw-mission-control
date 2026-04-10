@@ -114,5 +114,34 @@ services:
       RQ_DISPATCH_MAX_RETRIES: ${RQ_DISPATCH_MAX_RETRIES:-3}
     restart: unless-stopped
 
+  openclaw:
+    build:
+      context: ../openclaw-zero-token
+      dockerfile: Dockerfile
+    environment:
+      OPENCLAW_GATEWAY_AUTH_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      GATEWAY_PORT: ${OPENCLAW_GATEWAY_PORT:-4096}
+    volumes:
+      - openclaw_profiles:/root/.openclaw/profiles
+      - openclaw_cookies:/root/.openclaw/cookies
+      - openclaw_sessions:/root/.openclaw/sessions
+    ports:
+      - "127.0.0.1:${OPENCLAW_GATEWAY_PORT:-4096}:4096"
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "require('http').get('http://localhost:4096/healthz', r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
+  openclaw_profiles:
+  openclaw_cookies:
+  openclaw_sessions:
