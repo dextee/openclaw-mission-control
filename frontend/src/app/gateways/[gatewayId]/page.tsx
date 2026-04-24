@@ -8,7 +8,9 @@ import { useParams, useRouter } from "next/navigation";
 import { useAuth } from "@/auth/clerk";
 import { useQueryClient } from "@tanstack/react-query";
 import { AgentsTable } from "@/components/agents/AgentsTable";
+import { BrowserHealth } from "@/components/BrowserHealth";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
+import { WebProviderStatus } from "@/components/WebProviderStatus";
 import { Button } from "@/components/ui/button";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
@@ -279,6 +281,24 @@ export default function GatewayDetailPage() {
                 </div>
               </div>
             </div>
+
+            {gateway && (
+              <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Zero-Token Web Providers
+                </p>
+                <WebProviderStatus
+                  gatewayUrl={gateway.url}
+                  gatewayToken={gateway.token ?? undefined}
+                />
+                <div className="border-t border-slate-100 pt-4">
+                  <BrowserHealth
+                    gatewayUrl={gateway.url}
+                    gatewayToken={gateway.token ?? undefined}
+                  />
+                </div>
+              </div>
+            )}
 
             <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
               <div className="flex items-center justify-between">

@@ -104,3 +104,60 @@ def test_channel_auth_status_web() -> None:
     assert len(status.channels) == 1
     assert status.channels[0].channel_id == "qwen-web"
     assert status.channels[0].provider_type == "web"
+
+
+# --- GatewayModelItem schema ---
+
+
+def test_gateway_model_item_web() -> None:
+    from app.schemas.gateway_api import GatewayModelItem
+
+    item = GatewayModelItem(
+        id="claude-web/claude-sonnet-4-6",
+        name="Claude Sonnet 4.6 (Web)",
+        provider="claude-web",
+        provider_type="web",
+        auth_valid=True,
+        needs_reauth=False,
+    )
+    assert item.provider_type == "web"
+    assert item.auth_valid is True
+
+
+def test_gateway_models_response_empty() -> None:
+    from app.schemas.gateway_api import GatewayModelsResponse
+
+    resp = GatewayModelsResponse(models=[])
+    assert resp.models == []
+    assert resp.error is None
+
+
+def test_gateway_models_response_with_error() -> None:
+    from app.schemas.gateway_api import GatewayModelsResponse
+
+    resp = GatewayModelsResponse(models=[], error="unreachable")
+    assert resp.error == "unreachable"
+
+
+# --- AgentBase model field ---
+
+
+def test_agent_schema_has_model_field() -> None:
+    from app.schemas.agents import AgentCreate
+
+    agent = AgentCreate(
+        name="test-agent",
+        gateway_id="11111111-1111-1111-1111-111111111111",
+        model="claude-web/claude-sonnet-4-6",
+    )
+    assert agent.model == "claude-web/claude-sonnet-4-6"
+
+
+def test_agent_schema_model_defaults_none() -> None:
+    from app.schemas.agents import AgentCreate
+
+    agent = AgentCreate(
+        name="test-agent",
+        gateway_id="11111111-1111-1111-1111-111111111111",
+    )
+    assert agent.model is None

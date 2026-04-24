@@ -112,3 +112,22 @@ class ChannelReauthResponse(SQLModel):
     auth_url: str | None = None
     channel_id: str
     error: str | None = None
+
+
+class GatewayModelItem(SQLModel):
+    """A model available on the connected gateway."""
+
+    id: str
+    name: str
+    provider: str
+    context_window: int | None = None
+    provider_type: Literal["web", "api"] = "api"
+    auth_valid: bool = True
+    needs_reauth: bool = False
+
+
+class GatewayModelsResponse(SQLModel):
+    """List of models available on the connected gateway."""
+
+    models: list[GatewayModelItem]
+    error: str | None = None

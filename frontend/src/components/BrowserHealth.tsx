@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getApiBaseUrl } from "@/lib/api-base";
+import { getLocalAuthToken, isLocalAuthMode } from "@/auth/localAuth";
 
 interface BrowserContextStatus {
   provider: string;
@@ -13,16 +15,31 @@ interface Props {
   boardId?: string;
   gatewayUrl?: string;
   gatewayToken?: string;
-  apiBaseUrl: string;
-  authHeader: string;
+}
+
+async function getAuthHeader(): Promise<string> {
+  if (isLocalAuthMode()) {
+    const token = getLocalAuthToken();
+    return token ? `Bearer ${token}` : "";
+  }
+  // Clerk path
+  try {
+    type ClerkGlobal = { session?: { getToken: () => Promise<string> } | null };
+    const clerk = (window as unknown as { Clerk?: ClerkGlobal }).Clerk;
+    if (clerk?.session) {
+      const token = await clerk.session.getToken();
+      if (token) return `Bearer ${token}`;
+    }
+  } catch {
+    // fall through
+  }
+  return "";
 }
 
 export function BrowserHealth({
   boardId,
   gatewayUrl,
   gatewayToken,
-  apiBaseUrl,
-  authHeader,
 }: Props) {
   const [contexts, setContexts] = useState<BrowserContextStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -35,6 +52,8 @@ export function BrowserHealth({
       if (gatewayUrl) params.set("gateway_url", gatewayUrl);
       if (gatewayToken) params.set("gateway_token", gatewayToken);
       try {
+        const authHeader = await getAuthHeader();
+        const apiBaseUrl = getApiBaseUrl();
         const res = await fetch(
           `${apiBaseUrl}/gateways/browser-status?${params}`,
           {

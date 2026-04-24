@@ -506,7 +506,9 @@ class GatewayControlPlane(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    async def ensure_agent_session(self, session_key: str, *, label: str | None = None) -> None:
+    async def ensure_agent_session(
+        self, session_key: str, *, label: str | None = None, model: str | None = None
+    ) -> None:
         raise NotImplementedError
 
     @abstractmethod
@@ -558,10 +560,12 @@ class OpenClawGatewayControlPlane(GatewayControlPlane):
     async def health(self) -> object:
         return await openclaw_call("health", config=self._config)
 
-    async def ensure_agent_session(self, session_key: str, *, label: str | None = None) -> None:
+    async def ensure_agent_session(
+        self, session_key: str, *, label: str | None = None, model: str | None = None
+    ) -> None:
         if not session_key:
             return
-        await ensure_session(session_key, config=self._config, label=label)
+        await ensure_session(session_key, config=self._config, label=label, model=model)
 
     async def reset_agent_session(self, session_key: str) -> None:
         if not session_key:
@@ -1201,7 +1205,9 @@ class OpenClawGatewayProvisioner:
             allow_insecure_tls=gateway.allow_insecure_tls,
             disable_device_pairing=gateway.disable_device_pairing,
         )
-        await ensure_session(session_key, config=client_config, label=agent.name)
+        await ensure_session(
+            session_key, config=client_config, label=agent.name, model=agent.model or None
+        )
         verb = wakeup_verb or ("provisioned" if action == "provision" else "updated")
         await send_message(
             _wakeup_text(agent, verb=verb),

@@ -18,6 +18,7 @@ import {
 import {
   type listAgentsApiV1AgentsGetResponse,
   useListAgentsApiV1AgentsGet,
+  useUpdateAgentApiV1AgentsAgentIdPatch,
 } from "@/api/generated/agents/agents";
 import {
   getListBoardWebhooksApiV1BoardsBoardIdWebhooksGetQueryKey,
@@ -45,6 +46,7 @@ import type {
 } from "@/api/generated/model";
 import { BoardOnboardingChat } from "@/components/BoardOnboardingChat";
 import { DashboardPageLayout } from "@/components/templates/DashboardPageLayout";
+import { WebModelPicker } from "@/components/WebModelPicker";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -526,6 +528,27 @@ export default function EditBoardPage() {
     targetDate ?? toLocalDateInput(baseBoard?.target_date);
 
   const displayGatewayId = resolvedGatewayId || gateways[0]?.id || "";
+  const [boardModel, setBoardModel] = useState("");
+
+  // Carry over model selected during board creation (stored in sessionStorage)
+  useEffect(() => {
+    const pending = sessionStorage.getItem("pending_board_model");
+    if (pending) {
+      setBoardModel(pending);
+      sessionStorage.removeItem("pending_board_model");
+    }
+  }, []);
+
+  // Pre-fill model from lead agent (for existing boards)
+  useEffect(() => {
+    if (agentsQuery.data?.status === 200) {
+      const items = agentsQuery.data.data.items ?? [];
+      const leadAgent = items.find((a) => a.is_board_lead);
+      if (leadAgent?.model) {
+        setBoardModel(leadAgent.model);
+      }
+    }
+  }, [agentsQuery.data]);
   const isWebhookCreating = createWebhookMutation.isPending;
   const deletingWebhookId =
     deleteWebhookMutation.isPending && deleteWebhookMutation.variables
@@ -582,6 +605,7 @@ export default function EditBoardPage() {
     if (agentsQuery.data?.status !== 200) return [];
     return agentsQuery.data.data.items ?? [];
   }, [agentsQuery.data]);
+  const updateAgentMutation = useUpdateAgentApiV1AgentsAgentIdPatch<ApiError>();
   const webhooks = useMemo<BoardWebhookRead[]>(() => {
     if (webhooksQuery.data?.status !== 200) return [];
     return webhooksQuery.data.data.items ?? [];
@@ -675,7 +699,25 @@ export default function EditBoardPage() {
           : localDateInputToUtcIso(resolvedTargetDate),
     };
 
-    updateBoardMutation.mutate({ boardId, data: payload });
+    updateBoardMutation.mutate({
+      boardId,
+      data: payload,
+      mutation: {
+        onSuccess: async () => {
+          const leadAgent = webhookAgents.find((a) => a.is_board_lead);
+          if (leadAgent && boardModel !== (leadAgent.model ?? "")) {
+            try {
+              await updateAgentMutation.mutateAsync({
+                agentId: leadAgent.id,
+                data: { model: boardModel || null },
+              });
+            } catch {
+              // best-effort — board update succeeded
+            }
+          }
+        },
+      },
+    });
   };
 
   const handleCreateWebhook = () => {
@@ -907,6 +949,21 @@ export default function EditBoardPage() {
                 placeholder="What context should the lead agent know?"
                 className="min-h-[120px]"
                 disabled={isLoading}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-slate-900">
+                AI Model
+              </label>
+              <p className="text-xs text-slate-500">
+                Model used by agents on this board. Web models use browser
+                sessions (no API key required).
+              </p>
+              <WebModelPicker
+                boardId={boardId ?? undefined}
+                value={boardModel}
+                onChange={setBoardModel}
               />
             </div>
 

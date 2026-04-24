@@ -2,13 +2,16 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebProviderStatus } from "../WebProviderStatus";
 
+vi.mock("@/lib/api-base", () => ({ getApiBaseUrl: () => "http://localhost:8000" }));
+vi.mock("@/auth/localAuth", () => ({
+  isLocalAuthMode: () => true,
+  getLocalAuthToken: () => "test-token",
+}));
+
 const mockFetch = vi.fn();
 global.fetch = mockFetch;
 
-const defaultProps = {
-  apiBaseUrl: "http://localhost:8000",
-  authHeader: "Bearer test-token",
-};
+const defaultProps = {};
 
 const mockAuthenticatedChannel = {
   channel_id: "claude-web",

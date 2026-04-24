@@ -15,6 +15,7 @@ from app.schemas.gateway_api import (
     ChannelReauthResponse,
     ChannelsAuthStatusResponse,
     GatewayCommandsResponse,
+    GatewayModelsResponse,
     GatewayResolveQuery,
     GatewaySessionHistoryResponse,
     GatewaySessionMessageRequest,
@@ -203,6 +204,22 @@ async def gateway_channel_reauth(
     service = GatewaySessionService(session)
     return await service.reauth_channel(
         channel_id=channel_id,
+        params=params,
+        organization_id=ctx.organization.id,
+        user=auth.user,
+    )
+
+
+@router.get("/models", response_model=GatewayModelsResponse)
+async def gateway_models(
+    params: GatewayResolveQuery = RESOLVE_INPUT_DEP,
+    session: AsyncSession = SESSION_DEP,
+    auth: AuthContext = AUTH_DEP,
+    ctx: OrganizationContext = ORG_ADMIN_DEP,
+) -> GatewayModelsResponse:
+    """List models available on the gateway, enriched with web auth status."""
+    service = GatewaySessionService(session)
+    return await service.get_gateway_models(
         params=params,
         organization_id=ctx.organization.id,
         user=auth.user,

@@ -3,6 +3,7 @@ name: openclaw-mission-control
 services:
   db:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-mission_control}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
@@ -19,6 +20,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "127.0.0.1:${REDIS_PORT:-6379}:6379"
     healthcheck:
@@ -52,6 +54,7 @@ services:
         condition: service_healthy
     ports:
       - "${BACKEND_PORT:-8000}:8000"
+    restart: unless-stopped
 
   frontend:
     build:
@@ -72,6 +75,7 @@ services:
       - backend
     ports:
       - "${FRONTEND_PORT:-3000}:3000"
+    restart: unless-stopped
     develop:
       watch:
         # Rebuild frontend image when UI source or build config changes.
@@ -119,7 +123,7 @@ services:
       context: ../openclaw-zero-token
       dockerfile: Dockerfile
     environment:
-      OPENCLAW_GATEWAY_AUTH_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
       GATEWAY_PORT: ${OPENCLAW_GATEWAY_PORT:-4096}
     volumes:
       - openclaw_profiles:/root/.openclaw/profiles

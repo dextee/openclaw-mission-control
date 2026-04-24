@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 from uuid import UUID
 
 from fastapi import HTTPException, status
@@ -18,6 +18,8 @@ from app.schemas.gateway_api import (
     ChannelAuthStatus,
     ChannelReauthResponse,
     ChannelsAuthStatusResponse,
+    GatewayModelItem,
+    GatewayModelsResponse,
     GatewayResolveQuery,
     GatewaySessionHistoryResponse,
     GatewaySessionMessageRequest,
@@ -447,7 +449,7 @@ class GatewaySessionService(OpenClawDBService):
         )
         self._require_same_org(board, organization_id)
         try:
-            result = await openclaw_call("channels.status", config=config)
+            result = await openclaw_call("channels.status", {"probe": False}, config=config)
             if not isinstance(result, dict):
                 return ChannelsAuthStatusResponse(channels=[])
             channel_accounts = result.get("channelAccounts", {})
@@ -460,13 +462,17 @@ class GatewaySessionService(OpenClawDBService):
                 for acct in accounts:
                     if not isinstance(acct, dict):
                         continue
+                    raw_pt = acct.get("providerType")
+                    pt: Literal["web", "api"] = "web" if raw_pt == "web" else "api"
+                    raw_expiry = acct.get("cookieExpiry")
+                    expiry: int | None = int(raw_expiry) if isinstance(raw_expiry, (int, float)) else None
                     channels.append(
                         ChannelAuthStatus(
                             channel_id=channel_id,
                             auth_valid=bool(acct.get("authValid", True)),
                             needs_reauth=bool(acct.get("needsReauth", False)),
-                            cookie_expiry=acct.get("cookieExpiry"),
-                            provider_type=acct.get("providerType", "api"),
+                            cookie_expiry=expiry,
+                            provider_type=pt,
                         )
                     )
             return ChannelsAuthStatusResponse(channels=channels)
@@ -510,3 +516,83 @@ class GatewaySessionService(OpenClawDBService):
                 channel_id=channel_id,
                 error=normalize_gateway_error_message(str(exc)),
             )
+
+    async def get_gateway_models(
+        self,
+        *,
+        params: GatewayResolveQuery,
+        organization_id: UUID,
+        user: User | None,
+    ) -> GatewayModelsResponse:
+        """Call models.list and enrich with web model auth status."""
+        from app.services.openclaw.web_model_utils import (
+            is_web_model,
+            provider_from_model_id,
+        )
+
+        board, config, _ = await self.resolve_gateway(
+            params, user=user, organization_id=organization_id
+        )
+        self._require_same_org(board, organization_id)
+
+        # Fetch models list
+        try:
+            result = await openclaw_call("models.list", config=config)
+        except OpenClawGatewayError as exc:
+            return GatewayModelsResponse(
+                models=[], error=normalize_gateway_error_message(str(exc))
+            )
+
+        raw_models: list[object] = []
+        if isinstance(result, dict):
+            raw_models = self.as_object_list(result.get("models", []))
+
+        # Fetch auth status for web providers (best-effort)
+        auth_map: dict[str, bool] = {}
+        try:
+            auth_result = await openclaw_call(
+                "channels.status", {"probe": False}, config=config
+            )
+            if isinstance(auth_result, dict):
+                channel_accounts = auth_result.get("channelAccounts", {})
+                if isinstance(channel_accounts, dict):
+                    for ch_id, accounts in channel_accounts.items():
+                        if isinstance(accounts, list) and accounts:
+                            first = accounts[0]
+                            if isinstance(first, dict):
+                                auth_map[ch_id] = bool(first.get("authValid", True))
+        except OpenClawGatewayError:
+            pass
+
+        models: list[GatewayModelItem] = []
+        for item in raw_models:
+            if not isinstance(item, dict):
+                continue
+            model_id = item.get("id")
+            if not isinstance(model_id, str) or not model_id:
+                continue
+            provider = item.get("provider", "")
+            if not isinstance(provider, str):
+                provider = ""
+            web = is_web_model(model_id)
+            provider_key = provider_from_model_id(model_id) if web else None
+            auth_valid = auth_map.get(provider_key, True) if provider_key else True
+            raw_ctx = item.get("contextWindow")
+            ctx_window: int | None = (
+                int(raw_ctx) if isinstance(raw_ctx, (int, float)) else None
+            )
+            models.append(
+                GatewayModelItem(
+                    id=model_id,
+                    name=item.get("name", model_id)
+                    if isinstance(item.get("name"), str)
+                    else model_id,
+                    provider=provider,
+                    context_window=ctx_window,
+                    provider_type="web" if web else "api",
+                    auth_valid=auth_valid,
+                    needs_reauth=not auth_valid,
+                )
+            )
+
+        return GatewayModelsResponse(models=models)

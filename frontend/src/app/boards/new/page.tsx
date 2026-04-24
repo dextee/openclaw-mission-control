@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import SearchableSelect from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
+import { WebModelPicker } from "@/components/WebModelPicker";
 
 const slugify = (value: string) =>
   value
@@ -43,6 +44,7 @@ export default function NewBoardPage() {
   const [description, setDescription] = useState("");
   const [gatewayId, setGatewayId] = useState<string>("");
   const [boardGroupId, setBoardGroupId] = useState<string>("none");
+  const [boardModel, setBoardModel] = useState("");
 
   const [error, setError] = useState<string | null>(null);
 
@@ -72,6 +74,9 @@ export default function NewBoardPage() {
     mutation: {
       onSuccess: (result) => {
         if (result.status === 200) {
+          if (boardModel) {
+            sessionStorage.setItem("pending_board_model", boardModel);
+          }
           router.push(`/boards/${result.data.id}/edit?onboarding=1`);
         }
       },
@@ -90,6 +95,10 @@ export default function NewBoardPage() {
     return groupsQuery.data.data.items ?? [];
   }, [groupsQuery.data]);
   const displayGatewayId = gatewayId || gateways[0]?.id || "";
+  const selectedGateway = useMemo(
+    () => gateways.find((g) => g.id === displayGatewayId) ?? null,
+    [gateways, displayGatewayId],
+  );
   const isLoading =
     gatewaysQuery.isLoading ||
     groupsQuery.isLoading ||
@@ -229,6 +238,22 @@ export default function NewBoardPage() {
               placeholder="What context should the lead agent know before onboarding?"
               className="min-h-[120px]"
               disabled={isLoading}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-900">
+              AI Model
+            </label>
+            <p className="text-xs text-slate-500">
+              Choose which model agents on this board will use. Web models
+              require browser authentication.
+            </p>
+            <WebModelPicker
+              value={boardModel}
+              onChange={setBoardModel}
+              gatewayUrl={selectedGateway?.url}
+              gatewayToken={selectedGateway?.token ?? undefined}
             />
           </div>
         </div>

@@ -101,6 +101,13 @@ class AgentBase(SQLModel):
         description="Template representing deeper agent instructions.",
         examples=["When critical blockers appear, escalate in plain language."],
     )
+    model: str | None = Field(
+        default=None,
+        description="Model identifier to use for this agent's session (e.g. "
+                    "'claude-web/claude-sonnet-4-6'). "
+                    "When set, overrides the gateway default model for this agent's session.",
+        examples=["claude-web/claude-sonnet-4-6", "chatgpt-web/gpt-4"],
+    )
 
     @field_validator("identity_template", "soul_template", mode="before")
     @classmethod
@@ -189,6 +196,11 @@ class AgentUpdate(SQLModel):
         default=None,
         description="Optional replacement soul template.",
         examples=["Escalate only after checking all known mitigations."],
+    )
+    model: str | None = Field(
+        default=None,
+        description="Model to use for this agent's session.",
+        examples=["claude-web/claude-sonnet-4-6"],
     )
 
     @field_validator("identity_template", "soul_template", mode="before")

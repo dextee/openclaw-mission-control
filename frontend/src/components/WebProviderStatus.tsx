@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getApiBaseUrl } from "@/lib/api-base";
+import { getLocalAuthToken, isLocalAuthMode } from "@/auth/localAuth";
 
 interface ChannelAuthStatus {
   channel_id: string;
@@ -14,8 +16,6 @@ interface Props {
   boardId?: string;
   gatewayUrl?: string;
   gatewayToken?: string;
-  apiBaseUrl: string;
-  authHeader: string;
 }
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -33,6 +33,25 @@ const PROVIDER_LABELS: Record<string, string> = {
   "perplexity-web": "Perplexity",
   "xiaomimo-web": "Xiaomi Mo",
 };
+
+async function getAuthHeader(): Promise<string> {
+  if (isLocalAuthMode()) {
+    const token = getLocalAuthToken();
+    return token ? `Bearer ${token}` : "";
+  }
+  // Clerk path
+  try {
+    type ClerkGlobal = { session?: { getToken: () => Promise<string> } | null };
+    const clerk = (window as unknown as { Clerk?: ClerkGlobal }).Clerk;
+    if (clerk?.session) {
+      const token = await clerk.session.getToken();
+      if (token) return `Bearer ${token}`;
+    }
+  } catch {
+    // fall through
+  }
+  return "";
+}
 
 function statusBadge(ch: ChannelAuthStatus) {
   if (ch.provider_type !== "web") return null;
@@ -69,8 +88,6 @@ export function WebProviderStatus({
   boardId,
   gatewayUrl,
   gatewayToken,
-  apiBaseUrl,
-  authHeader,
 }: Props) {
   const [channels, setChannels] = useState<ChannelAuthStatus[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,6 +101,8 @@ export function WebProviderStatus({
     if (gatewayToken) params.set("gateway_token", gatewayToken);
 
     try {
+      const authHeader = await getAuthHeader();
+      const apiBaseUrl = getApiBaseUrl();
       const res = await fetch(
         `${apiBaseUrl}/gateways/channels/auth-status?${params}`,
         {
@@ -118,6 +137,8 @@ export function WebProviderStatus({
     if (gatewayUrl) params.set("gateway_url", gatewayUrl);
     if (gatewayToken) params.set("gateway_token", gatewayToken);
     try {
+      const authHeader = await getAuthHeader();
+      const apiBaseUrl = getApiBaseUrl();
       const res = await fetch(
         `${apiBaseUrl}/gateways/channels/${encodeURIComponent(channelId)}/reauth?${params}`,
         { method: "POST", headers: { Authorization: authHeader } },
