@@ -426,8 +426,19 @@ export default function EditBoardPage() {
 
   const updateBoardMutation = useUpdateBoardApiV1BoardsBoardIdPatch<ApiError>({
     mutation: {
-      onSuccess: (result) => {
+      onSuccess: async (result) => {
         if (result.status === 200) {
+          const leadAgent = webhookAgents.find((a) => a.is_board_lead);
+          if (leadAgent && boardModel !== (leadAgent.model ?? "")) {
+            try {
+              await updateAgentMutation.mutateAsync({
+                agentId: leadAgent.id,
+                data: { model: boardModel || null },
+              });
+            } catch {
+              // best-effort — board update succeeded
+            }
+          }
           router.push(`/boards/${result.data.id}`);
         }
       },
@@ -702,21 +713,6 @@ export default function EditBoardPage() {
     updateBoardMutation.mutate({
       boardId,
       data: payload,
-      mutation: {
-        onSuccess: async () => {
-          const leadAgent = webhookAgents.find((a) => a.is_board_lead);
-          if (leadAgent && boardModel !== (leadAgent.model ?? "")) {
-            try {
-              await updateAgentMutation.mutateAsync({
-                agentId: leadAgent.id,
-                data: { model: boardModel || null },
-              });
-            } catch {
-              // best-effort — board update succeeded
-            }
-          }
-        },
-      },
     });
   };
 

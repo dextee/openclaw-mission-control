@@ -1021,7 +1021,17 @@ export default function DashboardPage() {
               <section className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white p-4 md:p-6 shadow-sm">
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <h3 className="text-lg font-semibold text-slate-900">Sessions</h3>
-                  <span className="text-xs text-slate-500">{formatCount(activeSessions)}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-500">{formatCount(activeSessions)}</span>
+                    {gatewayTargets[0] ? (
+                      <Link
+                        href={`/gateways/${gatewayTargets[0].gatewayId}/chat`}
+                        className="rounded-md bg-slate-800 px-2 py-1 text-xs font-medium text-white hover:bg-slate-700"
+                      >
+                        Open Chat
+                      </Link>
+                    ) : null}
+                  </div>
                 </div>
                 <div className="max-h-[310px] space-y-2 overflow-x-hidden overflow-y-auto pr-1">
                   {!hasConfiguredGateways ? (

@@ -176,6 +176,14 @@ export default function GatewayDetailPage() {
             </Button>
             {isAdmin && gatewayId ? (
               <Button
+                variant="secondary"
+                onClick={() => router.push(`/gateways/${gatewayId}/chat`)}
+              >
+                Chat
+              </Button>
+            ) : null}
+            {isAdmin && gatewayId ? (
+              <Button
                 onClick={() => router.push(`/gateways/${gatewayId}/edit`)}
               >
                 Edit gateway
