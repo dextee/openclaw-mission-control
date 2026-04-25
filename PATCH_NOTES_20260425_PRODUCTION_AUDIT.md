@@ -227,3 +227,23 @@ e482654 docs: update patch notes — all P1s fixed, verification gate green
 - FIX-05 (HTTPS) is scaffolded but dormant — operator activation required.
 - FIX-09 (slow gateway endpoints ~1.3–1.5 s) deferred to P3 — not a blocker.
 - `dangerouslyDisableDeviceAuth=true` remains for Docker→host gateway connectivity (accepted trade-off).
+
+
+---
+
+## FIX-10 — Lifecycle reconcile crash leaves agents stuck in "updating" (post-audit follow-up)
+
+**Status:** ✅ LANDED and verified — `badc346`.
+
+**Diagnosis:** `lifecycle_reconcile.py:119` called `run_lifecycle()` with no exception handling. `run_lifecycle()` increments `agent.lifecycle_generation` before `apply_agent_lifecycle()`. When the gateway was briefly unreachable (restart), the call raised `HTTPException(502)`. The worker requeued the task with the **old** generation, but the DB row had `lifecycle_generation + 1`. The requeued task skipped as "stale generation". No further reconcile was ever scheduled. Agent permanently stranded in `status="updating"`.
+
+**Fix:** Wrapped `run_lifecycle()` in a try/except. On failure, re-read the agent to get the incremented generation, enqueue a fresh reconcile with that generation, and return gracefully.
+
+**Verification:**
+- Backend tests: 488 passed, 1 xfailed.
+- Backend mypy: clean.
+- Three stuck agents (`af8b053e-…`, `faf4290b-…`, `6e8ab2da-…`) all reached `status="online"` within ~2 minutes of worker restart.
+- No `skip_stale_generation` logs observed after fix.
+- Test artifacts deleted after verification.
+
+**Caveat:** Agents eventually go `offline` after max wake attempts (3) if they never heartbeat back. This is expected lifecycle behavior, not a bug. The zero-token gateway agents do not automatically call MC's heartbeat endpoint; the user can manually wake them via the UI or API when needed.
