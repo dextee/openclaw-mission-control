@@ -3,7 +3,7 @@
 // NOTE: We intentionally keep this file very small and dependency-free.
 // It provides CI/secretless-build safe fallbacks for Clerk hooks/components.
 
-import type { ReactNode, ComponentProps } from "react";
+import { useEffect, useState, type ReactNode, type ComponentProps } from "react";
 
 import {
   ClerkProvider,
@@ -22,6 +22,14 @@ function hasLocalAuthToken(): boolean {
   return Boolean(getLocalAuthToken());
 }
 
+function useMounted(): boolean {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+  return mounted;
+}
+
 export function isClerkEnabled(): boolean {
   // IMPORTANT: keep this in sync with AuthProvider; otherwise components like
   // <SignedOut/> may render without a <ClerkProvider/> and crash during prerender.
@@ -32,16 +40,18 @@ export function isClerkEnabled(): boolean {
 }
 
 export function SignedIn(props: { children: ReactNode }) {
+  const mounted = useMounted();
   if (isLocalAuthMode()) {
-    return hasLocalAuthToken() ? <>{props.children}</> : null;
+    return mounted && hasLocalAuthToken() ? <>{props.children}</> : null;
   }
   if (!isClerkEnabled()) return null;
   return <ClerkSignedIn>{props.children}</ClerkSignedIn>;
 }
 
 export function SignedOut(props: { children: ReactNode }) {
+  const mounted = useMounted();
   if (isLocalAuthMode()) {
-    return hasLocalAuthToken() ? null : <>{props.children}</>;
+    return mounted && !hasLocalAuthToken() ? <>{props.children}</> : null;
   }
   if (!isClerkEnabled()) return <>{props.children}</>;
   return <ClerkSignedOut>{props.children}</ClerkSignedOut>;
@@ -61,10 +71,11 @@ export function SignOutButton(
 }
 
 export function useUser() {
+  const mounted = useMounted();
   if (isLocalAuthMode()) {
     return {
       isLoaded: true,
-      isSignedIn: hasLocalAuthToken(),
+      isSignedIn: mounted && hasLocalAuthToken(),
       user: null,
     } as const;
   }
@@ -75,8 +86,9 @@ export function useUser() {
 }
 
 export function useAuth() {
+  const mounted = useMounted();
   if (isLocalAuthMode()) {
-    const token = getLocalAuthToken();
+    const token = mounted ? getLocalAuthToken() : null;
     return {
       isLoaded: true,
       isSignedIn: Boolean(token),
