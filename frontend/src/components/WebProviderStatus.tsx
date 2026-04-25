@@ -104,7 +104,7 @@ export function WebProviderStatus({
       const authHeader = await getAuthHeader();
       const apiBaseUrl = getApiBaseUrl();
       const res = await fetch(
-        `${apiBaseUrl}/gateways/channels/auth-status?${params}`,
+        `${apiBaseUrl}/api/v1/gateways/channels/auth-status?${params}`,
         {
           headers: { Authorization: authHeader },
         },
@@ -140,7 +140,7 @@ export function WebProviderStatus({
       const authHeader = await getAuthHeader();
       const apiBaseUrl = getApiBaseUrl();
       const res = await fetch(
-        `${apiBaseUrl}/gateways/channels/${encodeURIComponent(channelId)}/reauth?${params}`,
+        `${apiBaseUrl}/api/v1/gateways/channels/${encodeURIComponent(channelId)}/reauth?${params}`,
         { method: "POST", headers: { Authorization: authHeader } },
       );
       const data = await res.json();

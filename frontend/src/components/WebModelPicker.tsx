@@ -65,7 +65,7 @@ export function WebModelPicker({
       try {
         const authHeader = await getAuthHeader();
         const apiBaseUrl = getApiBaseUrl();
-        const res = await fetch(`${apiBaseUrl}/gateways/models?${params}`, {
+        const res = await fetch(`${apiBaseUrl}/api/v1/gateways/models?${params}`, {
           headers: authHeader ? { Authorization: authHeader } : {},
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);

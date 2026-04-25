@@ -55,7 +55,7 @@ export function BrowserHealth({
         const authHeader = await getAuthHeader();
         const apiBaseUrl = getApiBaseUrl();
         const res = await fetch(
-          `${apiBaseUrl}/gateways/browser-status?${params}`,
+          `${apiBaseUrl}/api/v1/gateways/browser-status?${params}`,
           {
             headers: { Authorization: authHeader },
           },
