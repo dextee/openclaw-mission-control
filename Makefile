@@ -100,6 +100,10 @@ backend-coverage: ## Backend tests with coverage gate (scoped 100% stmt+branch o
 frontend-test: frontend-tooling ## Frontend tests (vitest)
 	$(NODE_WRAP) --cwd $(FRONTEND_DIR) npm run test
 
+.PHONY: db-backup
+db-backup: ## Backup postgres DB to backups/mc-YYYYMMDD-HHMMSS.sql.gz (keeps last 30)
+	bash scripts/backup_db.sh
+
 .PHONY: backend-migrate
 backend-migrate: ## Apply backend DB migrations (uses backend/migrations)
 	cd $(BACKEND_DIR) && uv run alembic upgrade head
