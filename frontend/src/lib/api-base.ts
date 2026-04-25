@@ -11,14 +11,13 @@ export function getApiBaseUrl(): string {
   if (typeof window !== "undefined") {
     const protocol = window.location.protocol === "https:" ? "https" : "http";
     const host = window.location.hostname;
+    const port = window.location.port;
     if (host) {
-      // When served through a reverse proxy (ngrok, Caddy, etc.),
-      // the API is on the same origin.
-      if (
-        host.endsWith(".ngrok-free.dev") ||
-        host.endsWith(".ngrok.io") ||
-        host.endsWith(".ngrok.app")
-      ) {
+      // When served through a reverse proxy (ngrok, Caddy, etc.) the API is
+      // on the same origin. Detect that by: empty port (default 80/443) OR a
+      // port that isn't the dev frontend port (3000). Direct dev mode keeps
+      // sending requests to backend:8000.
+      if (!port || port !== "3000") {
         return "";
       }
       return `${protocol}://${host}:8000`;
