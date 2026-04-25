@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from uuid import UUID
 
 from sqlmodel import SQLModel
 
@@ -20,7 +21,7 @@ class GatewaySessionMessageRequest(SQLModel):
 class GatewayResolveQuery(SQLModel):
     """Query parameters used to resolve which gateway to target."""
 
-    board_id: str | None = None
+    board_id: UUID | None = None
     gateway_url: str | None = None
     gateway_token: str | None = None
     gateway_disable_device_pairing: bool | None = None

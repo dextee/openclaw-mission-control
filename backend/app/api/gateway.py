@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 
@@ -38,7 +39,7 @@ BOARD_ID_QUERY = Query(default=None)
 
 
 def _query_to_resolve_input(
-    board_id: str | None = Query(default=None),
+    board_id: UUID | None = Query(default=None),
     gateway_url: str | None = Query(default=None),
     gateway_token: str | None = Query(default=None),
     gateway_disable_device_pairing: bool | None = Query(default=None),
@@ -74,7 +75,7 @@ async def gateways_status(
 
 @router.get("/sessions", response_model=GatewaySessionsResponse)
 async def list_gateway_sessions(
-    board_id: str | None = BOARD_ID_QUERY,
+    board_id: UUID | None = BOARD_ID_QUERY,
     session: AsyncSession = SESSION_DEP,
     auth: AuthContext = AUTH_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
@@ -91,7 +92,7 @@ async def list_gateway_sessions(
 @router.get("/sessions/{session_id}", response_model=GatewaySessionResponse)
 async def get_gateway_session(
     session_id: str,
-    board_id: str | None = BOARD_ID_QUERY,
+    board_id: UUID | None = BOARD_ID_QUERY,
     session: AsyncSession = SESSION_DEP,
     auth: AuthContext = AUTH_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
@@ -109,7 +110,7 @@ async def get_gateway_session(
 @router.get("/sessions/{session_id}/history", response_model=GatewaySessionHistoryResponse)
 async def get_session_history(
     session_id: str,
-    board_id: str | None = BOARD_ID_QUERY,
+    board_id: UUID | None = BOARD_ID_QUERY,
     session: AsyncSession = SESSION_DEP,
     auth: AuthContext = AUTH_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
@@ -128,7 +129,7 @@ async def get_session_history(
 async def send_gateway_session_message(
     session_id: str,
     payload: GatewaySessionMessageRequest,
-    board_id: str | None = BOARD_ID_QUERY,
+    board_id: UUID | None = BOARD_ID_QUERY,
     session: AsyncSession = SESSION_DEP,
     auth: AuthContext = AUTH_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,

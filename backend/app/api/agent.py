@@ -1425,7 +1425,7 @@ async def create_agent(
 )
 async def nudge_agent(
     payload: AgentNudge,
-    agent_id: str,
+    agent_id: UUID,
     board: Board = BOARD_DEP,
     session: AsyncSession = SESSION_DEP,
     agent_ctx: AgentAuthContext = AGENT_CTX_DEP,
@@ -1511,7 +1511,7 @@ async def agent_heartbeat(
     """
     # Heartbeats must apply to the authenticated agent; agent names are not unique.
     return await agents_api.heartbeat_agent(
-        agent_id=str(agent_ctx.agent.id),
+        agent_id=agent_ctx.agent.id,
         payload=AgentHeartbeat(),
         session=session,
         actor=_actor(agent_ctx),
@@ -1545,12 +1545,12 @@ async def agent_heartbeat(
     ),
 )
 async def get_agent_soul(
-    agent_id: str,
+    agent_id: UUID,
     board: Board = BOARD_DEP,
     session: AsyncSession = SESSION_DEP,
     agent_ctx: AgentAuthContext = AGENT_CTX_DEP,
 ) -> str:
-    """Fetch an agent's SOUL.md content.
+    """Fetch an agent's SOUL md content.
 
     Allowed for board lead, or for an agent reading its own SOUL.
     """
@@ -1658,7 +1658,7 @@ async def get_agent_soul(
     },
 )
 async def update_agent_soul(
-    agent_id: str,
+    agent_id: UUID,
     payload: SoulUpdateRequest,
     board: Board = BOARD_DEP,
     session: AsyncSession = SESSION_DEP,
@@ -1750,7 +1750,7 @@ async def update_agent_soul(
     },
 )
 async def delete_board_agent(
-    agent_id: str,
+    agent_id: UUID,
     board: Board = BOARD_DEP,
     session: AsyncSession = SESSION_DEP,
     agent_ctx: AgentAuthContext = AGENT_CTX_DEP,

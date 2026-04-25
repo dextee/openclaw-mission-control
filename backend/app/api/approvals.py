@@ -437,7 +437,7 @@ async def create_approval(
 
 @router.patch("/{approval_id}", response_model=ApprovalRead)
 async def update_approval(
-    approval_id: str,
+    approval_id: UUID,
     payload: ApprovalUpdate,
     board: Board = BOARD_USER_WRITE_DEP,
     session: AsyncSession = SESSION_DEP,

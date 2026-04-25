@@ -70,7 +70,7 @@ class GatewaySessionService(OpenClawDBService):
 
     @staticmethod
     def to_resolve_query(
-        board_id: str | None,
+        board_id: UUID | None,
         gateway_url: str | None,
         gateway_token: str | None,
         gateway_disable_device_pairing: bool | None = None,
@@ -173,7 +173,7 @@ class GatewaySessionService(OpenClawDBService):
 
     async def require_gateway(
         self,
-        board_id: str | None,
+        board_id: UUID | None,
         *,
         user: User | None = None,
     ) -> tuple[Board, GatewayClientConfig, str | None]:
@@ -281,7 +281,7 @@ class GatewaySessionService(OpenClawDBService):
     async def get_sessions(
         self,
         *,
-        board_id: str | None,
+        board_id: UUID | None,
         organization_id: UUID,
         user: User | None,
     ) -> GatewaySessionsResponse:
@@ -318,7 +318,7 @@ class GatewaySessionService(OpenClawDBService):
         self,
         *,
         session_id: str,
-        board_id: str | None,
+        board_id: UUID | None,
         organization_id: UUID,
         user: User | None,
     ) -> GatewaySessionResponse:
@@ -362,7 +362,7 @@ class GatewaySessionService(OpenClawDBService):
         self,
         *,
         session_id: str,
-        board_id: str | None,
+        board_id: UUID | None,
         organization_id: UUID,
         user: User | None,
     ) -> GatewaySessionHistoryResponse:
@@ -384,7 +384,7 @@ class GatewaySessionService(OpenClawDBService):
         *,
         session_id: str,
         payload: GatewaySessionMessageRequest,
-        board_id: str | None,
+        board_id: UUID | None,
         organization_id: UUID,
         user: User | None,
     ) -> None:

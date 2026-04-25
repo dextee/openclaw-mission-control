@@ -105,7 +105,7 @@ async def create_agent(
 
 @router.get("/{agent_id}", response_model=AgentRead)
 async def get_agent(
-    agent_id: str,
+    agent_id: UUID,
     session: AsyncSession = SESSION_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> AgentRead:
@@ -116,7 +116,7 @@ async def get_agent(
 
 @router.patch("/{agent_id}", response_model=AgentRead)
 async def update_agent(
-    agent_id: str,
+    agent_id: UUID,
     payload: AgentUpdate,
     params: _AgentUpdateParams = AGENT_UPDATE_PARAMS_DEP,
     session: AsyncSession = SESSION_DEP,
@@ -136,7 +136,7 @@ async def update_agent(
 
 @router.post("/{agent_id}/heartbeat", response_model=AgentRead)
 async def heartbeat_agent(
-    agent_id: str,
+    agent_id: UUID,
     payload: AgentHeartbeat,
     session: AsyncSession = SESSION_DEP,
     actor: ActorContext = ACTOR_DEP,
@@ -159,7 +159,7 @@ async def heartbeat_or_create_agent(
 
 @router.delete("/{agent_id}", response_model=OkResponse)
 async def delete_agent(
-    agent_id: str,
+    agent_id: UUID,
     session: AsyncSession = SESSION_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> OkResponse:

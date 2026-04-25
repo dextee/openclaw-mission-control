@@ -139,7 +139,7 @@ class GatewayCoordinationService(AbstractGatewayMessagingService):
         self,
         *,
         board: Board,
-        agent_id: str,
+        agent_id: UUID | str,
     ) -> Agent:
         target = await Agent.objects.by_id(agent_id).first(self.session)
         return OpenClawAuthorizationPolicy.require_board_agent_target(
@@ -167,7 +167,7 @@ class GatewayCoordinationService(AbstractGatewayMessagingService):
         *,
         board: Board,
         actor_agent: Agent,
-        target_agent_id: str,
+        target_agent_id: UUID | str,
         message: str,
         correlation_id: str | None = None,
     ) -> None:
@@ -250,7 +250,7 @@ class GatewayCoordinationService(AbstractGatewayMessagingService):
         self,
         *,
         board: Board,
-        target_agent_id: str,
+        target_agent_id: UUID | str,
         correlation_id: str | None = None,
     ) -> str:
         trace_id = GatewayDispatchService.resolve_trace_id(correlation_id, prefix="coord.soul.read")
@@ -314,7 +314,7 @@ class GatewayCoordinationService(AbstractGatewayMessagingService):
         self,
         *,
         board: Board,
-        target_agent_id: str,
+        target_agent_id: UUID | str,
         content: str,
         reason: str | None,
         source_url: str | None,

@@ -139,7 +139,7 @@ class OpenClawAuthorizationPolicy:
     def require_board_lead_or_same_actor(
         *,
         actor_agent: Agent,
-        target_agent_id: str,
+        target_agent_id: UUID | str,
     ) -> None:
         allowed = actor_agent.is_board_lead or str(actor_agent.id) == target_agent_id
         if not allowed:

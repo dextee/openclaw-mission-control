@@ -1584,7 +1584,7 @@ class AgentLifecycleService(OpenClawDBService):
     async def get_agent(
         self,
         *,
-        agent_id: str,
+        agent_id: UUID,
         ctx: OrganizationContext,
     ) -> AgentRead:
         agent = await Agent.objects.by_id(agent_id).first(self.session)
@@ -1596,7 +1596,7 @@ class AgentLifecycleService(OpenClawDBService):
     async def update_agent(
         self,
         *,
-        agent_id: str,
+        agent_id: UUID,
         payload: AgentUpdate,
         options: AgentUpdateOptions,
     ) -> AgentRead:
@@ -1650,7 +1650,7 @@ class AgentLifecycleService(OpenClawDBService):
     async def heartbeat_agent(
         self,
         *,
-        agent_id: str,
+        agent_id: UUID,
         payload: AgentHeartbeat,
         actor: ActorContextLike,
     ) -> AgentRead:
@@ -1692,7 +1692,7 @@ class AgentLifecycleService(OpenClawDBService):
         )
         if actor.actor_type == "agent" and actor.agent:
             return await self.heartbeat_agent(
-                agent_id=str(actor.agent.id),
+                agent_id=actor.agent.id,
                 payload=AgentHeartbeat(status=payload.status),
                 actor=actor,
             )
@@ -1726,7 +1726,7 @@ class AgentLifecycleService(OpenClawDBService):
     async def delete_agent(
         self,
         *,
-        agent_id: str,
+        agent_id: UUID,
         ctx: OrganizationContext,
     ) -> OkResponse:
         self.logger.log(TRACE_LEVEL, "agent.delete.start agent_id=%s", agent_id)
@@ -1739,7 +1739,7 @@ class AgentLifecycleService(OpenClawDBService):
     async def delete_agent_as_lead(
         self,
         *,
-        agent_id: str,
+        agent_id: UUID,
         actor_agent: Agent,
     ) -> OkResponse:
         """Delete a board-scoped agent as the board lead."""
