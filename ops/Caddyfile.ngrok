@@ -1,0 +1,25 @@
+# Caddy config for the local ngrok reverse-proxy setup.
+#
+# Listens on :18080 and routes:
+#   /api/*     -> backend on host port 8000
+#   /healthz   -> backend on host port 8000
+#   /          -> Next.js frontend on host port 3000
+#
+# Used by scripts/start_ngrok_proxy.sh which then runs `ngrok http 18080`
+# to expose the stack over HTTPS.
+
+{
+	admin off
+}
+
+:18080 {
+	handle /api/* {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle /healthz {
+		reverse_proxy 127.0.0.1:8000
+	}
+	handle {
+		reverse_proxy 127.0.0.1:3000
+	}
+}
