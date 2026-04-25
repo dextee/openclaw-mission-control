@@ -96,6 +96,15 @@ class Settings(BaseSettings):
     sentry_traces_sample_rate: float = 0.1
     enable_metrics: bool = False
 
+    # FIX-19: Background reconciler that retries agents stuck in `provisioning`
+    # when their initial gateway provision call failed silently or the worker
+    # crashed mid-flight. Set MC_STUCK_PROVISIONING_RECONCILER_ENABLED=false to
+    # disable (e.g. if it interacts badly with a future workflow).
+    mc_stuck_provisioning_reconciler_enabled: bool = True
+    # FIX-20: Background poller that mirrors gateway session history into
+    # BoardMemory. Off by default — opt-in to start, ramp up after soak.
+    mc_memory_sync_enabled: bool = False
+
     @model_validator(mode="after")
     def _defaults(self) -> Self:
         if self.auth_mode == AuthMode.CLERK:

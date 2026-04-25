@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING, Any
 
@@ -457,10 +458,35 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         logger.info("app.lifecycle.rate_limit backend=redis")
     else:
         logger.info("app.lifecycle.rate_limit backend=memory")
+
+    # FIX-19: Background reconciler for agents stuck in `provisioning`.
+    background_tasks: list[asyncio.Task[None]] = []
+    if settings.mc_stuck_provisioning_reconciler_enabled:
+        from app.services.openclaw.stuck_provisioning_reconciler import (
+            start_stuck_provisioning_reconciler,
+        )
+
+        background_tasks.append(start_stuck_provisioning_reconciler())
+        logger.info("app.lifecycle.stuck_provisioning_reconciler started")
+    else:
+        logger.info("app.lifecycle.stuck_provisioning_reconciler disabled")
+
     logger.info("app.lifecycle.started")
     try:
         yield
     finally:
+        for task in background_tasks:
+            task.cancel()
+        for task in background_tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "app.lifecycle.background_task_shutdown_error",
+                    extra={"task": task.get_name(), "error": str(exc)},
+                )
         logger.info("app.lifecycle.stopped")
 
 
