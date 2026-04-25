@@ -47,6 +47,8 @@ services:
       LOCAL_AUTH_TOKEN: ${LOCAL_AUTH_TOKEN}
       BASE_URL: ${BASE_URL:-http://localhost:8000}
       RQ_REDIS_URL: redis://redis:6379/0
+      MC_MEMORY_SYNC_ENABLED: ${MC_MEMORY_SYNC_ENABLED:-false}
+      MC_STUCK_PROVISIONING_RECONCILER_ENABLED: ${MC_STUCK_PROVISIONING_RECONCILER_ENABLED:-true}
     depends_on:
       db:
         condition: service_healthy

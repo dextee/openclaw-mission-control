@@ -408,3 +408,27 @@ Caps: 50 sessions per sweep, 100 messages per session, 30s interval.
 - Zero-token config snapshot: `/tmp/zero-token-openclaw.snapshot.20260425-161734.json` (in case a future fix touches that repo).
 
 To roll back the entire batch atomically: `git reset --hard pre-fix-17 && docker compose build backend && docker compose up -d backend`.
+
+---
+
+## FIX-21: Enable Memory Sync + Reconciler in Production (2026-04-25)
+
+**Change:** Enabled both background workers by default in `compose.yml` + `.env`.
+
+- `MC_MEMORY_SYNC_ENABLED=true` — board memory auto-sync from gateway sessions (FIX-20)
+- `MC_STUCK_PROVISIONING_RECONCILER_ENABLED=true` — stuck provisioning reconciler (FIX-19)
+
+Both vars are now declared in `compose.yml` backend environment with safe defaults (`false` / `true`).
+The `.env` file sets them explicitly for this deployment.
+
+**First sweep result:** 18 messages synced on startup. Board memory now visible in the UI.
+
+**Rollback:**
+```bash
+# Remove from .env:
+# MC_MEMORY_SYNC_ENABLED=true
+# MC_STUCK_PROVISIONING_RECONCILER_ENABLED=true
+# Then restart:
+docker compose up -d backend webhook-worker
+# Or set MC_MEMORY_SYNC_ENABLED=false to keep compose.yml clean
+```
