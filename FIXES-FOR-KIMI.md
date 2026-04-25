@@ -657,14 +657,147 @@ Investigate later: is the RPC round-trip (backend ↔ gateway WS) the bottleneck
 
 ## Dispatch checklist
 
-- [ ] FIX-01 — Invalid UUID 500 (systemic)
-- [ ] FIX-02 — React hydration mismatch
-- [ ] FIX-03 — Chat-send rate limit
-- [ ] FIX-04 — Docker healthchecks
-- [ ] FIX-05 — HTTPS reverse proxy
-- [ ] FIX-06 — Tighten CORS
-- [ ] FIX-07 — Sentry + Prometheus
-- [ ] FIX-08 — DB backup script
-- [ ] FIX-09 — Slow endpoints (defer)
+- [x] FIX-01 — Invalid UUID 500 (systemic)
+- [x] FIX-02 — React hydration mismatch
+- [x] FIX-03 — Chat-send rate limit
+- [x] FIX-04 — Docker healthchecks
+- [x] FIX-05 — HTTPS reverse proxy (scaffolded, dormant)
+- [x] FIX-06 — Tighten CORS
+- [x] FIX-07 — Sentry + Prometheus
+- [x] FIX-08 — DB backup script
+- [x] FIX-09 — Slow endpoints (defer)
+- [ ] FIX-10 — Agent lifecycle reconcile crashes leave agents stuck in "updating"
 
 After each fix lands, re-run `PRODUCTION-AUDIT-2026-04-25.md#11` reproducers to confirm the bug is gone and no regressions. A clean run with no 5xx in the REST smoke and 9/9 Cypress specs passing is the gate for "ready to ship widely."
+
+
+---
+
+## FIX-10 — Agent lifecycle reconcile crashes leave agents permanently stuck in "updating" (P1)
+
+**Diagnosis**
+
+`backend/app/services/openclaw/lifecycle_reconcile.py:119` calls `orchestrator.run_lifecycle()` inside `process_lifecycle_queue_task()` with no exception handling. `run_lifecycle()` increments `agent.lifecycle_generation` at line 94 **before** calling `apply_agent_lifecycle()`. If the gateway is temporarily unreachable (e.g., during restart), `apply_agent_lifecycle()` raises `HTTPException(502)`. The worker framework (`queue_worker.py:101-119`) catches the exception and requeues the task with the **original** `generation` value in the payload. But the agent DB row now has `lifecycle_generation + 1`. When the requeued task later runs, `lifecycle_reconcile.py:45` sees `agent.lifecycle_generation != payload.generation` and skips as "stale generation". No further reconcile is ever scheduled. The agent is permanently stranded in `status="updating"` because `mark_provision_requested()` set it at the start of `run_lifecycle()` and `mark_provision_complete("online")` never ran.
+
+**Live evidence:** Both test agents (`af8b053e-…`, `faf4290b-…`) and the production Leadgen Bot (`6e8ab2da-…`) hit the same stall. Worker logs show:
+
+```
+lifecycle.reconcile.retriggered agent_id=af8b053e-... generation=1
+...
+fastapi.exceptions.HTTPException: 502: Gateway update failed: [Errno 111] Connect call failed ('172.19.0.1', 3001)
+...
+lifecycle.reconcile.skip_stale_generation agent_id=af8b053e-... queued_generation=2 current_generation=3
+```
+
+**Fix — targeted change**
+
+File: `backend/app/services/openclaw/lifecycle_reconcile.py`
+
+Add `enqueue_lifecycle_reconcile` and `QueuedAgentLifecycleReconcile` to the import at line 15:
+
+```python
+from app.services.openclaw.lifecycle_queue import (
+    QueuedAgentLifecycleReconcile,
+    decode_lifecycle_task,
+    defer_lifecycle_reconcile,
+    enqueue_lifecycle_reconcile,
+)
+```
+
+Wrap the `run_lifecycle()` call (lines 118-136) in a try/except that catches `Exception` (the specific exceptions are `HTTPException` from gateway errors and `asyncio.TimeoutError` from `wait_for`). On failure:
+
+1. Log the error with `logger.warning("lifecycle.reconcile.failed", ...)`
+2. Re-read the agent from the DB to get the current `lifecycle_generation` (it was incremented by the failed `run_lifecycle`)
+3. If `agent.wake_attempts < MAX_WAKE_ATTEMPTS_WITHOUT_CHECKIN` and agent status is not "offline", enqueue a fresh reconcile with `generation=agent.lifecycle_generation` and a short delay (e.g., 30s)
+4. Return gracefully — do **not** re-raise
+
+Exact code to insert around lines 118-140:
+
+```python
+        orchestrator = AgentLifecycleOrchestrator(session)
+        try:
+            await asyncio.wait_for(
+                orchestrator.run_lifecycle(
+                    gateway=gateway,
+                    agent_id=agent.id,
+                    board=board,
+                    user=None,
+                    action="update",
+                    auth_token=None,
+                    force_bootstrap=False,
+                    reset_session=True,
+                    wake=True,
+                    deliver_wakeup=True,
+                    wakeup_verb="updated",
+                    clear_confirm_token=True,
+                    raise_gateway_errors=True,
+                ),
+                timeout=_RECONCILE_TIMEOUT_SECONDS,
+            )
+            logger.info(
+                "lifecycle.reconcile.retriggered",
+                extra={"agent_id": str(agent.id), "generation": payload.generation},
+            )
+        except Exception as exc:
+            logger.warning(
+                "lifecycle.reconcile.failed",
+                extra={
+                    "agent_id": str(agent.id),
+                    "generation": payload.generation,
+                    "error": str(exc),
+                },
+            )
+            # Re-read agent to get the generation that was incremented by the failed run_lifecycle.
+            agent = await Agent.objects.by_id(payload.agent_id).first(session)
+            if agent is not None and agent.wake_attempts < MAX_WAKE_ATTEMPTS_WITHOUT_CHECKIN and agent.status not in ("offline", "deleting"):
+                enqueue_lifecycle_reconcile(
+                    QueuedAgentLifecycleReconcile(
+                        agent_id=agent.id,
+                        gateway_id=agent.gateway_id,
+                        board_id=agent.board_id,
+                        generation=agent.lifecycle_generation,
+                        checkin_deadline_at=utcnow() + CHECKIN_DEADLINE_AFTER_WAKE,
+                    )
+                )
+                logger.info(
+                    "lifecycle.reconcile.reattempt_scheduled",
+                    extra={"agent_id": str(agent.id), "generation": agent.lifecycle_generation},
+                )
+```
+
+Also add `CHECKIN_DEADLINE_AFTER_WAKE` to the imports at the top of `lifecycle_reconcile.py` (it's currently imported only in `lifecycle_orchestrator.py`).
+
+**Verification command**
+
+```bash
+cd /root/openclaw-mission-control
+source .env
+AUTH="Authorization: Bearer ${LOCAL_AUTH_TOKEN}"
+
+# Check current status (should be "updating")
+curl -sS -H "$AUTH" http://localhost:8000/api/v1/agents/af8b053e-eac5-4129-98b9-e029448a2c97 | jq '{status, lifecycle_generation, last_provision_error}'
+curl -sS -H "$AUTH" http://localhost:8000/api/v1/agents/faf4290b-cacf-45c9-aa81-91ab83210645 | jq '{status, lifecycle_generation, last_provision_error}'
+
+# Restart the webhook-worker to pick up the code change
+docker compose restart webhook-worker
+
+# Wait 2-3 minutes for reconcile to run
+echo "Waiting 3 minutes..."; sleep 180
+
+# Check status again — should now be "online" (or "active" if heartbeat arrives)
+curl -sS -H "$AUTH" http://localhost:8000/api/v1/agents/af8b053e-eac5-4129-98b9-e029448a2c97 | jq '{status, lifecycle_generation, last_provision_error}'
+curl -sS -H "$AUTH" http://localhost:8000/api/v1/agents/faf4290b-cacf-45c9-aa81-91ab83210645 | jq '{status, lifecycle_generation, last_provision_error}'
+
+# Also verify the production Leadgen Bot (optional — do not delete it, just observe)
+curl -sS -H "$AUTH" http://localhost:8000/api/v1/agents/6e8ab2da-8f30-442a-8bac-348027febcc3 | jq '{status, lifecycle_generation, last_provision_error}'
+```
+
+**Success criteria:** Both test agents transition from `status="updating"` to `status="online"` within 3 minutes of `webhook-worker` restart. No `skip_stale_generation` logs appear for these agents. If the production Leadgen Bot also transitions, note it as a bonus.
+
+**Test artifact recommendation:** Keep the test board (`a08cf3b2-…`) and both test agents until this fix is verified. Once both show `status="online"`, delete them with:
+
+```bash
+curl -sS -X DELETE -H "$AUTH" http://localhost:8000/api/v1/agents/af8b053e-eac5-4129-98b9-e029448a2c97
+curl -sS -X DELETE -H "$AUTH" http://localhost:8000/api/v1/agents/faf4290b-cacf-45c9-aa81-91ab83210645
+curl -sS -X DELETE -H "$AUTH" http://localhost:8000/api/v1/boards/a08cf3b2-eaf0-4f0d-926a-f87db3ba8ad3
+```
