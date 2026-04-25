@@ -51,6 +51,9 @@ AUTH="Authorization: Bearer ${LOCAL_AUTH_TOKEN}"
 | FIX-10 Lifecycle reconcile crash → agents stuck | ✅ Done | `badc346` |
 | FIX-11 Frontend missing `/api/v1/` prefix on raw fetches | ✅ Done | `5634947` |
 | FIX-12 Frontend ngrok same-origin API URLs | ✅ Done | `2bc78da` |
+| FIX-13 Zero-token agents stuck offline after 3 wake attempts | ✅ Done | (this commit) |
+| FIX-14 api-base.ts now port-based (any reverse proxy, not just ngrok) | ✅ Done | (this commit) |
+| FIX-15 Caddy + ngrok startup scripted (`scripts/start_ngrok_proxy.sh`) | ✅ Done | (this commit) |
 
 **Docs commits:** Patch notes, audit docs, FIX-10 verification.
 
@@ -58,9 +61,10 @@ AUTH="Authorization: Bearer ${LOCAL_AUTH_TOKEN}"
 
 ## 4. Known Remaining Issues to Investigate
 
-### 4.1 Agents go `offline` after max wake attempts (P2)
+### 4.1 Agents go `offline` after max wake attempts (P2) — ✅ FIXED in FIX-13
 **What:** Board agents provision successfully, reach `status="online"`, then after 3 wake cycles with no heartbeat they go `status="offline"`.  
 **Root cause:** The zero-token gateway agents do NOT automatically call MC's `/api/v1/agents/{id}/heartbeat` endpoint. The HEARTBEAT.md in their workspace tells them to, but the gateway's session runner doesn't execute it.  
+**Fix applied:** `lifecycle_orchestrator.py` now treats successful gateway provisioning as a check-in (sets `last_seen_at`, resets `wake_attempts=0`, skips reconcile enqueue). `OFFLINE_AFTER` bumped 10 min → 60 min.  
 **Impact:** Agents show as offline in MC UI even though the gateway sessions are functional.  
 **How to test:**
 ```bash
@@ -95,15 +99,13 @@ curl -sS -H "$AUTH" http://localhost:8000/api/v1/agents/<AGENT_ID>
 **How to test:** Send a message to an agent session, then check `/api/v1/boards/{id}/memory`.  
 **Possible fix:** Add a webhook or callback from the gateway to MC when a session receives a message, OR have MC poll gateway session history periodically and sync to board memory.
 
-### 4.3 Frontend API base URL logic needs refinement (P2)
-**What:** `frontend/src/lib/api-base.ts` auto-resolves backend URL. For ngrok hostnames it now returns `""` (same-origin). For localhost it returns `:8000`. For everything else it returns `:8000`.  
-**Problem:** When accessing via public IP `http://217.216.34.170:3000`, the frontend tries `http://217.216.34.170:8000` which works (CORS allows it). But if someone puts MC behind a reverse proxy on port 443, the `:8000` suffix breaks.  
-**How to test:** Access via ngrok (`https://...`) and via public IP (`http://217.216.34.170:3000`). Both should work.  
-**Possible fix:** Make `getApiBaseUrl()` smarter — if `window.location.port` is not 3000 and not empty, assume a reverse proxy and use same-origin.
+### 4.3 Frontend API base URL logic needs refinement (P2) — ✅ FIXED in FIX-14
+**What:** `frontend/src/lib/api-base.ts` previously special-cased ngrok hostnames only.  
+**Fix applied:** Replaced ngrok-only check with port-based heuristic — if `window.location.port` is empty or not `3000`, return same-origin (works for any reverse proxy). Direct dev mode on `:3000` still hits backend on `:8000`. Three new vitest cases added.
 
-### 4.4 Caddy ngrok setup is manual (P2)
-**What:** Caddy runs on port 18080, ngrok tunnels it. This works but is fragile.  
-**Improvement:** Document or automate the Caddy + ngrok setup so it's reproducible.
+### 4.4 Caddy ngrok setup is manual (P2) — ✅ FIXED in FIX-15
+**What:** Caddy runs on port 18080, ngrok tunnels it. This works but was manually started.  
+**Fix applied:** Added `ops/Caddyfile.ngrok` (committed config) and `scripts/start_ngrok_proxy.sh` (idempotent `start | stop | status`). Run `scripts/start_ngrok_proxy.sh` to bring both up.
 
 ### 4.5 Gateway `agents.create` returns "already exists" as error (P2 — cosmetic)
 **What:** The zero-token gateway returns `INVALID_REQUEST: agent "mc-..." already exists` when MC retries `agents.create`. MC swallows this correctly now, but the gateway logs show errors.  

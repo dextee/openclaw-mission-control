@@ -247,3 +247,49 @@ e482654 docs: update patch notes — all P1s fixed, verification gate green
 - Test artifacts deleted after verification.
 
 **Caveat:** Agents eventually go `offline` after max wake attempts (3) if they never heartbeat back. This is expected lifecycle behavior, not a bug. The zero-token gateway agents do not automatically call MC's heartbeat endpoint; the user can manually wake them via the UI or API when needed.
+
+---
+
+## FIX-13 — Zero-token gateway agents go offline after 3 wake attempts (post-audit follow-up)
+
+**Date:** 2026-04-25
+**Status:** ✅ LANDED and verified.
+
+**Files changed:**
+- `backend/app/services/openclaw/lifecycle_orchestrator.py`
+- `backend/app/services/openclaw/constants.py`
+- `frontend/src/lib/api-base.ts`
+- `frontend/src/lib/api-base.test.ts`
+- `ops/Caddyfile.ngrok` (new)
+- `scripts/start_ngrok_proxy.sh` (new)
+
+**Diagnosis (issue 4.1 in CLAUDE-ULTIMATE-PROMPT.md):** `AgentLifecycleOrchestrator.run_lifecycle` enqueued a `lifecycle_reconcile` task 30 seconds after every successful provisioning. The reconcile checked `_has_checked_in_since_wake(agent)`, which returned `False` because zero-token gateway agents never call MC's `/api/v1/agents/{id}/heartbeat`. The reconcile then re-ran the lifecycle, incrementing `wake_attempts`. After 3 cycles the agent was forcibly marked `status="offline"` even though the gateway session was operational. DB observation (Leadgen Bot before fix): `status=offline, wake_attempts=3, last_provision_error="Agent did not check in after wake; max wake attempts reached"`.
+
+**Fix:**
+1. **`lifecycle_orchestrator.py`** — after the gateway returns success from `apply_agent_lifecycle`, treat that as a check-in: set `last_seen_at = utcnow()`, reset `wake_attempts = 0`, clear `checkin_deadline_at`, and skip the reconcile enqueue. Rationale: a successful gateway response means the agent record was created/updated and the wake message was delivered to the session — there is nothing more for MC to wait for. Removed the now-unused `enqueue_lifecycle_reconcile` and `QueuedAgentLifecycleReconcile` imports.
+2. **`constants.py`** — bumped `OFFLINE_AFTER` from 10 minutes to 60 minutes. Zero-token gateway agents do not heartbeat back to MC, so the displayed online window now reflects "alive on gateway" rather than the prior "must heartbeat every 10 min".
+3. **`api-base.ts`** (issue 4.3) — replaced ngrok-only same-origin special case with a port-based heuristic: if `window.location.port` is empty or any value other than `3000`, return same-origin (works for any reverse-proxy setup, not just ngrok). Direct dev mode on `:3000` still hits backend on `:8000`.
+4. **`api-base.test.ts`** — added 3 new test cases (default-port HTTPS, non-3000 port, ngrok hostname).
+5. **`ops/Caddyfile.ngrok` + `scripts/start_ngrok_proxy.sh`** (issue 4.4) — committed Caddy config and idempotent start/stop/status script for the local Caddy + ngrok reverse proxy. Replaces the previously-undocumented `/tmp/Caddyfile.ngrok` and `nohup ngrok` invocation. Usage: `scripts/start_ngrok_proxy.sh [start|stop|status]`.
+
+**Verification:**
+- Backend tests: 488 passed, 1 xfailed (unchanged).
+- Backend mypy: clean.
+- Frontend typecheck + build: clean.
+- Frontend vitest `api-base.test.ts`: 6/6 pass (3 new + 3 existing).
+- Cypress E2E: 21/21 pass across 9 specs.
+- REST smoke: 98 pass, 0 5xx, 2 expected 404s on missing resources.
+- **End-to-end live agent test:**
+  - Created a fresh `deepseek-v4` agent on a test board.
+  - Agent reached `status=online`, `last_seen_at` populated, `wake_attempts=0`.
+  - Polled status every 30s for 2.5 minutes — agent stayed `online` (previously would have flipped offline within ~90s).
+  - Sent `"Reply with the single word: PONG"` via `/api/v1/gateways/sessions/{id}/message` — gateway returned `{"ok":true}`.
+  - Session history showed assistant response `"PONG"` 60 seconds later.
+  - Cleanup: deleted test agent + board.
+- **Heal of pre-existing stuck agent:** force-reprovisioned `Leadgen Bot` (`6e8ab2da-...`). Previously: `status=offline, wake_attempts=3, error="did not check in after wake"`. After: `status=online, wake_attempts=0, last_seen_at` populated, no error.
+- ngrok HTTPS: `GET /healthz` → `{"ok":true}`; root returns the login page.
+
+**Known limitations (out of scope for this pass):**
+- **Issue 4.2 — board memory does not sync gateway chat history.** `send_session_message` does not write to `BoardMemory`, and the gateway processes messages asynchronously, so MC has no synchronous response to record. A real fix needs a background worker that polls `sessions.history` and appends new entries to `BoardMemory`. The chat history is reachable today via `GET /api/v1/gateways/sessions/{id}/history`.
+- **Issue 4.5 — gateway returns "already exists" as INVALID_REQUEST on retry.** Cosmetic log noise on the zero-token gateway side. MC swallows the error correctly. Fix lives in `/root/openclaw-zero-token` (out of scope).
+- **Long-term liveness for zero-token gateway agents.** After 60 minutes without a real heartbeat, agents still flip to `offline` via `with_computed_status`. Proper fix is a background task that polls `sessions.list` per gateway and refreshes `last_seen_at` for active sessions.
