@@ -23,6 +23,11 @@ OFFLINE_AFTER = timedelta(minutes=60)
 # - allow up to 3 wake attempts before giving up
 CHECKIN_DEADLINE_AFTER_WAKE = timedelta(seconds=30)
 MAX_WAKE_ATTEMPTS_WITHOUT_CHECKIN = 3
+
+# FIX-18: How long an agent can sit in transitional `updating` state before
+# `with_computed_status` reverts it to `offline`. Bounds the worst-case
+# stuck-state window if a gateway write fails mid-flight without raising.
+UPDATING_STATE_TIMEOUT = timedelta(minutes=2)
 AGENT_SESSION_PREFIX = "agent"
 
 DEFAULT_CHANNEL_HEARTBEAT_VISIBILITY: dict[str, bool] = {

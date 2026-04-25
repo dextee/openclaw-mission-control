@@ -50,6 +50,7 @@ from app.services.openclaw.constants import (
     _TOOLS_KV_RE,
     DEFAULT_HEARTBEAT_CONFIG,
     OFFLINE_AFTER,
+    UPDATING_STATE_TIMEOUT,
 )
 from app.services.openclaw.db_agent_state import (
     mint_agent_token,
@@ -867,7 +868,13 @@ class AgentLifecycleService(OpenClawDBService):
     @classmethod
     def with_computed_status(cls, agent: Agent) -> Agent:
         now = utcnow()
-        if agent.status in {"deleting", "updating"}:
+        if agent.status == "deleting":
+            return agent
+        if agent.status == "updating":
+            # FIX-18: Don't let an agent stay "updating" forever if the gateway
+            # write failed silently or the worker crashed mid-flight.
+            if agent.updated_at and now - agent.updated_at > UPDATING_STATE_TIMEOUT:
+                agent.status = "offline"
             return agent
         if agent.last_seen_at is None:
             agent.status = "provisioning"
