@@ -5,10 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from app.api.deps import require_org_admin
 from app.core.auth import AuthContext, get_auth_context
+from app.core.client_ip import get_client_ip
+from app.core.rate_limit import chat_send_limiter
 from app.db.session import get_session
 from app.schemas.common import OkResponse
 from app.schemas.gateway_api import (
@@ -129,12 +131,19 @@ async def get_session_history(
 async def send_gateway_session_message(
     session_id: str,
     payload: GatewaySessionMessageRequest,
+    request: Request,
     board_id: UUID | None = BOARD_ID_QUERY,
     session: AsyncSession = SESSION_DEP,
     auth: AuthContext = AUTH_DEP,
     ctx: OrganizationContext = ORG_ADMIN_DEP,
 ) -> OkResponse:
     """Send a message into a specific gateway session."""
+    rate_key = str(auth.user.id) if auth.user else get_client_ip(request)
+    if not await chat_send_limiter.is_allowed(rate_key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Chat rate limit exceeded",
+        )
     service = GatewaySessionService(session)
     await service.send_session_message(
         session_id=session_id,

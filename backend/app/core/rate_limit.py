@@ -235,3 +235,9 @@ webhook_ingest_limiter: RateLimiter = create_rate_limiter(
     max_requests=60,
     window_seconds=60.0,
 )
+# Chat send: 30 messages per 60 seconds per actor.
+chat_send_limiter: RateLimiter = create_rate_limiter(
+    namespace="chat.send",
+    max_requests=30,
+    window_seconds=60.0,
+)
