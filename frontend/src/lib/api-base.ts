@@ -12,6 +12,15 @@ export function getApiBaseUrl(): string {
     const protocol = window.location.protocol === "https:" ? "https" : "http";
     const host = window.location.hostname;
     if (host) {
+      // When served through a reverse proxy (ngrok, Caddy, etc.),
+      // the API is on the same origin.
+      if (
+        host.endsWith(".ngrok-free.dev") ||
+        host.endsWith(".ngrok.io") ||
+        host.endsWith(".ngrok.app")
+      ) {
+        return "";
+      }
       return `${protocol}://${host}:8000`;
     }
   }
