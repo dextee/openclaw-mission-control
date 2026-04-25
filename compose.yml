@@ -137,5 +137,27 @@ services:
       RQ_DISPATCH_MAX_RETRIES: ${RQ_DISPATCH_MAX_RETRIES:-3}
     restart: unless-stopped
 
+  # -------------------------------------------------------------------------
+  # HTTPS reverse proxy (Caddy) — DORMANT. Uncomment this block and follow the
+  # steps in PATCH_NOTES_20260425_PRODUCTION_AUDIT.md to activate HTTPS.
+  # -------------------------------------------------------------------------
+  # caddy:
+  #   image: caddy:2-alpine
+  #   ports:
+  #     - "80:80"
+  #     - "443:443"
+  #   volumes:
+  #     - ./ops/Caddyfile:/etc/caddy/Caddyfile:ro
+  #     - caddy_data:/data
+  #     - caddy_config:/config
+  #   depends_on:
+  #     backend:
+  #       condition: service_healthy
+  #     frontend:
+  #       condition: service_healthy
+  #   restart: unless-stopped
+
 volumes:
   postgres_data:
+  # caddy_data: {}
+  # caddy_config: {}

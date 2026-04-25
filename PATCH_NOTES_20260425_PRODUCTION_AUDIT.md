@@ -93,3 +93,53 @@ c135902 feat: zero-token gateway monitoring, reauth, model assignment
 ```
 
 Do not force-push or amend these. Land fixes as new commits.
+
+---
+
+## How to activate HTTPS (FIX-05 scaffold)
+
+The Caddy reverse-proxy configuration is staged but dormant.
+
+### Files added
+- `ops/Caddyfile` — reverse-proxy rules with `<FQDN_PLACEHOLDER>`.
+- `compose.yml` — commented-out `caddy:` service block.
+
+### Activation checklist
+
+1. **DNS** — point your FQDN (e.g. `mc.example.com`) at this server's public IP.
+2. **Caddyfile** — replace `<FQDN_PLACEHOLDER>` with your real FQDN:
+   ```bash
+   sed -i 's/<FQDN_PLACEHOLDER>/mc.example.com/g' ops/Caddyfile
+   ```
+   If the FQDN is public, comment out or remove the `tls internal` line so
+   Caddy auto-obtains a Let's Encrypt certificate.
+3. **Env vars** — update `.env`:
+   ```
+   BASE_URL=https://mc.example.com
+   CORS_ORIGINS=https://mc.example.com
+   ```
+4. **Compose** — uncomment the `caddy:` service block and the two
+   `caddy_data` / `caddy_config` volume stubs in `compose.yml`.
+5. **Remove direct ports** — remove (or comment out) the `ports:` mappings
+   on `backend` and `frontend` so traffic flows only through Caddy:
+   ```yaml
+   # backend:
+   #   ports:
+   #     - "${BACKEND_PORT:-8000}:8000"
+   # frontend:
+   #   ports:
+   #     - "${FRONTEND_PORT:-3000}:3000"
+   ```
+6. **Start**:
+   ```bash
+   docker compose -f compose.yml up -d --build
+   ```
+7. **Verify**:
+   ```bash
+   curl -sSI https://mc.example.com/healthz   # HTTP/2 200
+   curl -sSI https://mc.example.com/          # HTTP/2 200 from frontend
+   ```
+
+The stack currently remains on HTTP unchanged; nothing is activated until
+you run the steps above.
+

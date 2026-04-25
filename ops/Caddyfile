@@ -1,0 +1,26 @@
+# Caddy reverse-proxy configuration for OpenClaw Mission Control.
+# Replace <FQDN_PLACEHOLDER> with your real domain before activating.
+# For local dev, Caddy will use a self-signed cert via "tls internal".
+
+<FQDN_PLACEHOLDER> {
+	# Local dev fallback: auto-generate a self-signed certificate.
+	# Remove or comment out "tls internal" when you have a real public FQDN
+	# with DNS pointing at this box — Caddy will then auto-obtain a
+	# Let's Encrypt certificate instead.
+	tls internal
+
+	# API traffic -> backend
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Health checks -> backend
+	handle /healthz {
+		reverse_proxy backend:8000
+	}
+
+	# Everything else -> Next.js frontend
+	handle {
+		reverse_proxy frontend:3000
+	}
+}
