@@ -471,6 +471,15 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     else:
         logger.info("app.lifecycle.stuck_provisioning_reconciler disabled")
 
+    # FIX-20: Mirror gateway session history into BoardMemory.
+    if settings.mc_memory_sync_enabled:
+        from app.services.openclaw.board_memory_sync import start_board_memory_sync
+
+        background_tasks.append(start_board_memory_sync())
+        logger.info("app.lifecycle.board_memory_sync started")
+    else:
+        logger.info("app.lifecycle.board_memory_sync disabled")
+
     logger.info("app.lifecycle.started")
     try:
         yield
