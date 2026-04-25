@@ -24,10 +24,6 @@ from app.services.openclaw.db_agent_state import (
 )
 from app.services.openclaw.db_service import OpenClawDBService
 from app.services.openclaw.gateway_rpc import OpenClawGatewayError
-from app.services.openclaw.lifecycle_queue import (
-    QueuedAgentLifecycleReconcile,
-    enqueue_lifecycle_reconcile,
-)
 from app.services.openclaw.provisioning import OpenClawGatewayProvisioner
 from app.services.organizations import get_org_owner_user
 
@@ -150,18 +146,14 @@ class AgentLifecycleOrchestrator(OpenClawDBService):
             clear_confirm_token=clear_confirm_token,
         )
         locked.last_provision_error = None
-        locked.checkin_deadline_at = utcnow() + CHECKIN_DEADLINE_AFTER_WAKE if wake else None
+        # Successful gateway lifecycle == agent is alive on the gateway.
+        # Record it as a check-in so zero-token gateway agents (which don't call
+        # MC's /heartbeat endpoint) don't get stuck in the wake/checkin retry loop.
+        if wake:
+            locked.last_seen_at = utcnow()
+            locked.wake_attempts = 0
+        locked.checkin_deadline_at = None
         self.session.add(locked)
         await self.session.commit()
         await self.session.refresh(locked)
-        if wake and locked.checkin_deadline_at is not None:
-            enqueue_lifecycle_reconcile(
-                QueuedAgentLifecycleReconcile(
-                    agent_id=locked.id,
-                    gateway_id=locked.gateway_id,
-                    board_id=locked.board_id,
-                    generation=locked.lifecycle_generation,
-                    checkin_deadline_at=locked.checkin_deadline_at,
-                )
-            )
         return locked

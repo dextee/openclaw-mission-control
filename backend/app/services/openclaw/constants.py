@@ -17,7 +17,7 @@ DEFAULT_HEARTBEAT_CONFIG: dict[str, Any] = {
     "includeReasoning": False,
 }
 
-OFFLINE_AFTER = timedelta(minutes=10)
+OFFLINE_AFTER = timedelta(minutes=60)
 # Provisioning convergence policy:
 # - require first heartbeat/check-in within 30s of wake
 # - allow up to 3 wake attempts before giving up
