@@ -10,9 +10,17 @@ from app.db.session import async_session_maker
 from app.models.agents import Agent
 from app.models.boards import Board
 from app.models.gateways import Gateway
-from app.services.openclaw.constants import MAX_WAKE_ATTEMPTS_WITHOUT_CHECKIN
+from app.services.openclaw.constants import (
+    CHECKIN_DEADLINE_AFTER_WAKE,
+    MAX_WAKE_ATTEMPTS_WITHOUT_CHECKIN,
+)
 from app.services.openclaw.lifecycle_orchestrator import AgentLifecycleOrchestrator
-from app.services.openclaw.lifecycle_queue import decode_lifecycle_task, defer_lifecycle_reconcile
+from app.services.openclaw.lifecycle_queue import (
+    QueuedAgentLifecycleReconcile,
+    decode_lifecycle_task,
+    defer_lifecycle_reconcile,
+    enqueue_lifecycle_reconcile,
+)
 from app.services.queue import QueuedTask
 
 logger = get_logger(__name__)
@@ -116,25 +124,58 @@ async def process_lifecycle_queue_task(task: QueuedTask) -> None:
                 return
 
         orchestrator = AgentLifecycleOrchestrator(session)
-        await asyncio.wait_for(
-            orchestrator.run_lifecycle(
-                gateway=gateway,
-                agent_id=agent.id,
-                board=board,
-                user=None,
-                action="update",
-                auth_token=None,
-                force_bootstrap=False,
-                reset_session=True,
-                wake=True,
-                deliver_wakeup=True,
-                wakeup_verb="updated",
-                clear_confirm_token=True,
-                raise_gateway_errors=True,
-            ),
-            timeout=_RECONCILE_TIMEOUT_SECONDS,
-        )
-        logger.info(
-            "lifecycle.reconcile.retriggered",
-            extra={"agent_id": str(agent.id), "generation": payload.generation},
-        )
+        try:
+            await asyncio.wait_for(
+                orchestrator.run_lifecycle(
+                    gateway=gateway,
+                    agent_id=agent.id,
+                    board=board,
+                    user=None,
+                    action="update",
+                    auth_token=None,
+                    force_bootstrap=False,
+                    reset_session=True,
+                    wake=True,
+                    deliver_wakeup=True,
+                    wakeup_verb="updated",
+                    clear_confirm_token=True,
+                    raise_gateway_errors=True,
+                ),
+                timeout=_RECONCILE_TIMEOUT_SECONDS,
+            )
+            logger.info(
+                "lifecycle.reconcile.retriggered",
+                extra={"agent_id": str(agent.id), "generation": payload.generation},
+            )
+        except Exception as exc:
+            logger.warning(
+                "lifecycle.reconcile.failed",
+                extra={
+                    "agent_id": str(agent.id),
+                    "generation": payload.generation,
+                    "error": str(exc),
+                },
+            )
+            # Re-read agent to get the generation incremented by the failed run_lifecycle.
+            agent = await Agent.objects.by_id(payload.agent_id).first(session)
+            if (
+                agent is not None
+                and agent.wake_attempts < MAX_WAKE_ATTEMPTS_WITHOUT_CHECKIN
+                and agent.status not in ("offline", "deleting")
+            ):
+                enqueue_lifecycle_reconcile(
+                    QueuedAgentLifecycleReconcile(
+                        agent_id=agent.id,
+                        gateway_id=agent.gateway_id,
+                        board_id=agent.board_id,
+                        generation=agent.lifecycle_generation,
+                        checkin_deadline_at=utcnow() + CHECKIN_DEADLINE_AFTER_WAKE,
+                    )
+                )
+                logger.info(
+                    "lifecycle.reconcile.reattempt_scheduled",
+                    extra={
+                        "agent_id": str(agent.id),
+                        "generation": agent.lifecycle_generation,
+                    },
+                )
