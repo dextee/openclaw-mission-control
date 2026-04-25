@@ -12,6 +12,7 @@ from uuid import UUID
 from fastapi import HTTPException, status
 from sqlmodel import col, select
 
+from app.core.logging import get_logger
 from app.core.time import utcnow
 from app.models.agents import Agent
 from app.models.boards import Board
@@ -24,6 +25,7 @@ from app.services.openclaw.db_agent_state import (
 )
 from app.services.openclaw.db_service import OpenClawDBService
 from app.services.openclaw.gateway_rpc import OpenClawGatewayError
+from app.services.openclaw.internal.retry import GatewayBackoff
 from app.services.openclaw.provisioning import OpenClawGatewayProvisioner
 from app.services.organizations import get_org_owner_user
 
@@ -31,6 +33,18 @@ if TYPE_CHECKING:
     from sqlmodel.ext.asyncio.session import AsyncSession
 
     from app.models.users import User
+
+
+logger = get_logger(__name__)
+
+
+# FIX-17: When the gateway closes the WS mid-lifecycle (e.g. SIGUSR1 self-restart
+# triggered by an unrelated config.patch from another caller), retry instead of
+# surfacing a 502 to the user. Bounded so it doesn't tie up the per-agent
+# SELECT FOR UPDATE lock for too long.
+_LIFECYCLE_RETRY_TIMEOUT_S: float = 30.0
+_LIFECYCLE_RETRY_BASE_DELAY_S: float = 1.0
+_LIFECYCLE_RETRY_MAX_DELAY_S: float = 8.0
 
 
 class AgentLifecycleOrchestrator(OpenClawDBService):
@@ -101,7 +115,7 @@ class AgentLifecycleOrchestrator(OpenClawDBService):
             await self.session.refresh(locked)
             return locked
 
-        try:
+        async def _apply_once() -> None:
             await OpenClawGatewayProvisioner().apply_agent_lifecycle(
                 agent=locked,
                 gateway=gateway,
@@ -115,6 +129,15 @@ class AgentLifecycleOrchestrator(OpenClawDBService):
                 deliver_wakeup=deliver_wakeup,
                 wakeup_verb=wakeup_verb,
             )
+
+        try:
+            await GatewayBackoff(
+                timeout_s=_LIFECYCLE_RETRY_TIMEOUT_S,
+                base_delay_s=_LIFECYCLE_RETRY_BASE_DELAY_S,
+                max_delay_s=_LIFECYCLE_RETRY_MAX_DELAY_S,
+                jitter=0.15,
+                timeout_context=f"agent {action}",
+            ).run(_apply_once)
         except OpenClawGatewayError as exc:
             locked.last_provision_error = str(exc)
             locked.updated_at = utcnow()
@@ -125,6 +148,21 @@ class AgentLifecycleOrchestrator(OpenClawDBService):
                 raise HTTPException(
                     status_code=status.HTTP_502_BAD_GATEWAY,
                     detail=f"Gateway {action} failed: {exc}",
+                ) from exc
+            return locked
+        except TimeoutError as exc:
+            # Retry deadline reached on transient errors — surface as 502 with
+            # retry context so callers can diagnose vs. configuration errors.
+            logger.warning("lifecycle retry deadline reached for %s: %s", action, exc)
+            locked.last_provision_error = str(exc)
+            locked.updated_at = utcnow()
+            self.session.add(locked)
+            await self.session.commit()
+            await self.session.refresh(locked)
+            if raise_gateway_errors:
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Gateway {action} failed (after retries): {exc}",
                 ) from exc
             return locked
         except (OSError, RuntimeError, ValueError) as exc:
