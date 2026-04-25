@@ -327,3 +327,84 @@ e482654 docs: update patch notes — all P1s fixed, verification gate green
 **Known caveat:** The Social Strategist response includes a Chinese-language "AI generated" disclaimer footer (`本回答由 AI 生成...`). This is a deepseek-v4 provider-side artifact, not a Mission Control issue. Cosmetic.
 
 **Files changed:** None. This is a runtime verification using existing endpoints.
+
+---
+
+## FIX-17 / FIX-18 / FIX-19 / FIX-20: Production hardening from upstream issue audit ✅
+
+**Why this batch:** A scan of `abhi1693/openclaw-mission-control` issues + PRs surfaced 4 known-upstream bugs that match what we hit during the live test:
+
+| Upstream | Our equivalent | Status upstream |
+|---|---|---|
+| #317 / #266 | gateway 1012 race during agent create | OPEN |
+| #206 / #231 / PR #184 Bug 3 | agents stuck in `updating` forever | OPEN |
+| PR #184 Bug 2 | agents stuck in `provisioning` if create crashes mid-flight | OPEN |
+| (no upstream issue) | board memory ↔ session-history disconnect | unfiled gap |
+
+We are 27 commits ahead of upstream and 0 behind, so nothing has merged upstream that fixes this for us.
+
+### FIX-17 — Bounded retry on transient gateway errors
+
+**File:** `backend/app/services/openclaw/lifecycle_orchestrator.py`  
+**Test:** `backend/tests/test_lifecycle_orchestrator_retry.py`  
+**Commit:** `500476a`
+
+When the zero-token gateway emits SIGUSR1 (full restart) on a `config.patch` triggered by a different concurrent caller, our in-flight WS to `agents.create`/`agents.update` gets `1012 service restart`. Previously surfaced as 502; now retries via the existing `GatewayBackoff` (3 retries, 30s deadline, 1s base / 8s max delay).
+
+**Rollback:** `git revert 500476a` — restores previous "fail fast on first error" behavior.
+
+### FIX-18 — Time out stale `updating` state
+
+**Files:** `backend/app/services/openclaw/constants.py`, `backend/app/services/openclaw/provisioning_db.py`  
+**Test:** `backend/tests/test_with_computed_status.py`  
+**Commit:** `3819c84`
+
+`with_computed_status` previously returned early for `status="updating"`, so any agent left in that state by a crashed worker stayed that way forever. Added `UPDATING_STATE_TIMEOUT = 2min`; past that, revert to `offline` so the heartbeat / re-provision path can pick it up.
+
+**Rollback:** `git revert 3819c84`. No env flag — pure code change.
+
+### FIX-19 — Lifespan reconciler for stuck `provisioning`
+
+**Files:** `backend/app/services/openclaw/stuck_provisioning_reconciler.py` (new), `backend/app/main.py`, `backend/app/core/config.py`  
+**Test:** `backend/tests/test_stuck_provisioning_reconciler.py`  
+**Commit:** `db62a64`
+
+If `POST /api/v1/agents` crashes after the DB row is written but before the gateway responds (server restart, network drop), the agent stays `provisioning + last_seen_at=NULL` forever — the existing queue-based reconciler only triggers from a successful `run_lifecycle`, never for orphans.
+
+Added a FastAPI lifespan background task that sweeps every 2 minutes for agents matching:
+- `status='provisioning'` AND `last_seen_at IS NULL`
+- `created_at < now - 5 min`
+- `wake_attempts < MAX_WAKE_ATTEMPTS_WITHOUT_CHECKIN` (caps retries at 3)
+
+For each, re-runs `run_lifecycle(action='update', wake=True)`; FIX-13's gateway-success-as-checkin path then marks online correctly.
+
+**Rollback (operational, no redeploy):** set `MC_STUCK_PROVISIONING_RECONCILER_ENABLED=false` and restart backend container.  
+**Rollback (full):** `git revert db62a64`.
+
+### FIX-20 — Board memory ↔ session history sync
+
+**Files:** `backend/app/services/openclaw/board_memory_sync.py` (new), `backend/app/main.py`  
+**Test:** `backend/tests/test_board_memory_sync.py`  
+**Commit:** `2f6a627`
+
+Periodic poller that walks gateway-attached agents (status: online/updating/provisioning) and pulls their session history via `chat.history`. New messages are inserted into `BoardMemory` keyed by stable `source = "gw:{session_id}:{__openclaw.id || role:timestamp}"` for dedupe.
+
+Caps: 50 sessions per sweep, 100 messages per session, 30s interval.  
+**OFF by default** — turn on with `MC_MEMORY_SYNC_ENABLED=true`.
+
+**Rollback (operational):** unset `MC_MEMORY_SYNC_ENABLED` (or set to `false`) and restart backend. Background task stops; existing `is_chat=true source=gw:*` rows in `board_memory` are harmless and can be left or pruned with `DELETE FROM board_memory WHERE source LIKE 'gw:%' AND is_chat = true;`.  
+**Rollback (full):** `git revert 2f6a627`.
+
+### Compatibility verification
+
+- **Telegram arvion bot:** `channels.telegram.allowFrom`, `bindings[0]`, and the `main` agent in `/root/openclaw-zero-token/.openclaw-upstream-state/openclaw.json` are untouched. None of FIX-17..20 modifies zero-token gateway state. Telegram provider was confirmed running pre- and post-deploy (`[telegram] [default] starting provider` in journalctl).
+- **DeepSeek-v4 tool calling:** Re-tested after backend restart. Lead Researcher session continued to handle prompts that exercise `web_search` and tool-call/tool-result round-trips. No code path used by the gateway's tool-call protocol was touched.
+- **Backend tests:** 511 passed, 1 xfailed (was 488 + 1 xfailed pre-batch — added 23 new tests for these fixes).
+- **mypy:** 149 source files, no issues.
+
+### Snapshot for full-batch rollback
+
+- Git tag: `pre-fix-17` (points at `317135a` — last commit before this batch).
+- Zero-token config snapshot: `/tmp/zero-token-openclaw.snapshot.20260425-161734.json` (in case a future fix touches that repo).
+
+To roll back the entire batch atomically: `git reset --hard pre-fix-17 && docker compose build backend && docker compose up -d backend`.
