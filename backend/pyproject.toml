@@ -28,6 +28,8 @@ dependencies = [
     "redis==6.3.0",
     "rq==2.6.0",
     "cryptography==45.0.7",
+    "sentry-sdk[fastapi]==2.27.0",
+    "prometheus-fastapi-instrumentator==7.1.0",
 ]
 
 [project.optional-dependencies]

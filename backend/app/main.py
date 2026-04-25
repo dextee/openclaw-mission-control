@@ -45,6 +45,19 @@ if TYPE_CHECKING:
 
 configure_logging()
 logger = get_logger(__name__)
+
+sentry_dsn = settings.sentry_dsn.strip()
+if sentry_dsn:
+    try:
+        import sentry_sdk
+
+        sentry_sdk.init(
+            dsn=sentry_dsn,
+            traces_sample_rate=settings.sentry_traces_sample_rate,
+        )
+        logger.info("app.sentry.initialized")
+    except Exception:
+        logger.warning("app.sentry.init_failed", exc_info=True)
 OPENAPI_TAGS = [
     {
         "name": "auth",
@@ -471,6 +484,16 @@ if origins:
     logger.info("app.cors.enabled origins_count=%s", len(origins))
 else:
     logger.info("app.cors.disabled")
+
+if settings.enable_metrics:
+    from prometheus_fastapi_instrumentator import Instrumentator
+
+    Instrumentator().instrument(app).expose(
+        app, endpoint="/metrics", include_in_schema=False
+    )
+    logger.info("app.metrics.enabled endpoint=/metrics")
+else:
+    logger.info("app.metrics.disabled")
 
 app.add_middleware(
     SecurityHeadersMiddleware,

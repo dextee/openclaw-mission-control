@@ -91,6 +91,11 @@ class Settings(BaseSettings):
     request_log_slow_ms: int = Field(default=1000, ge=0)
     request_log_include_health: bool = False
 
+    # Observability
+    sentry_dsn: str = ""
+    sentry_traces_sample_rate: float = 0.1
+    enable_metrics: bool = False
+
     @model_validator(mode="after")
     def _defaults(self) -> Self:
         if self.auth_mode == AuthMode.CLERK:
