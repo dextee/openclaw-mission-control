@@ -464,8 +464,8 @@ if origins:
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Agent-Token", "X-Request-Id"],
         expose_headers=["X-Total-Count", "X-Limit", "X-Offset"],
     )
     logger.info("app.cors.enabled origins_count=%s", len(origins))
