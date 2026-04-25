@@ -54,6 +54,7 @@ AUTH="Authorization: Bearer ${LOCAL_AUTH_TOKEN}"
 | FIX-13 Zero-token agents stuck offline after 3 wake attempts | ✅ Done | (this commit) |
 | FIX-14 api-base.ts now port-based (any reverse proxy, not just ngrok) | ✅ Done | (this commit) |
 | FIX-15 Caddy + ngrok startup scripted (`scripts/start_ngrok_proxy.sh`) | ✅ Done | (this commit) |
+| FIX-16 Multi-agent E2E (real leadgen + 30-day social plan, not just PONG) | ✅ Done | (this commit) |
 
 **Docs commits:** Patch notes, audit docs, FIX-10 verification.
 

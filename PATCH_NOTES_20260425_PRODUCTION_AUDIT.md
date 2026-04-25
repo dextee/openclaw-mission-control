@@ -293,3 +293,37 @@ e482654 docs: update patch notes — all P1s fixed, verification gate green
 - **Issue 4.2 — board memory does not sync gateway chat history.** `send_session_message` does not write to `BoardMemory`, and the gateway processes messages asynchronously, so MC has no synchronous response to record. A real fix needs a background worker that polls `sessions.history` and appends new entries to `BoardMemory`. The chat history is reachable today via `GET /api/v1/gateways/sessions/{id}/history`.
 - **Issue 4.5 — gateway returns "already exists" as INVALID_REQUEST on retry.** Cosmetic log noise on the zero-token gateway side. MC swallows the error correctly. Fix lives in `/root/openclaw-zero-token` (out of scope).
 - **Long-term liveness for zero-token gateway agents.** After 60 minutes without a real heartbeat, agents still flip to `offline` via `with_computed_status`. Proper fix is a background task that polls `sessions.list` per gateway and refreshes `last_seen_at` for active sessions.
+
+---
+
+## FIX-16: Multi-agent functionality E2E (real workload, not just PONG) ✅
+
+**Why:** The earlier FIX-13 verification only sent a one-word "PONG" echo. The user pushed back: "did you do full functionality test? is deepseek v4 agent able to do leadgen inside mission control and have another agent to do social media 30 day plan." This is the proof that the platform works end-to-end with real agentic work.
+
+**Setup:**
+- Board `626b267d-f037-41ff-af91-d7949c7bf992` ("SG Fintech Leadgen E2E") on gateway `8242530a-d23d-4309-bb07-79d0a00fb29b` (zero-token, deepseek-v4).
+- `max_agents` patched from 1 → 2.
+- Agent 1: **Lead Researcher** (`e3f60e41-cd25-4119-81eb-e5f5aed4a84a`), model `deepseek-v4`, role "Lead Researcher".
+- Agent 2: **Social Strategist** (`449c4199-92c1-4b58-8e0b-3b4174bc6a0b`), model `deepseek-v4`, role "Social Media Strategist".
+
+**Test 1 — Leadgen (Lead Researcher):**
+- Prompt: "Find 5 Singapore-based fintech companies that would benefit from compliance/RegTech help (AML, KYC automation, MAS Notice 626/1014). For each: company name, description, pain point, contact channel."
+- Agent autonomously called `web_search` 3x via the SearXNG plugin, hit a DuckDuckGo bot challenge on the third query, then synthesized a final answer from search results + base knowledge.
+- Output: 5 named, real Singapore fintechs (Airwallex, Wise SG, Nium, Thunes, Aspire) with valid descriptions, plausible compliance pain points, and contact channels.
+- Round-trip latency: ~90s end-to-end including 3 tool calls.
+
+**Test 2 — 30-day social media plan (Social Strategist):**
+- Prompt: "Produce a 30-day social media content plan for a Singapore RegTech startup. Audience: fintech founders, compliance officers. Channels: LinkedIn 3x/week + X 2x/week. Each day: day number, channel, post type, topic, 1-line hook."
+- Output: Full 30-day calendar grouped by week-themes ("Compliance Gap" → "Notice 626 Deep Dive" → "Efficiency & Ops" → "Strategic View" → "Future-Proofing"). Each day has channel, type tag, topic, and a sharp hook line. Real MAS-specific references (Notice 626 CBR, Notice 1014 STR SLAs, Project Orchid, Veritas).
+- Round-trip latency: ~60s.
+
+**Verification:**
+- Both agents reached `status=online`, `last_seen_at` populated, `wake_attempts=0` after FIX-13's PATCH-trigger reprovision path.
+- `GET /api/v1/gateways/sessions/{id}/history?board_id=...` shows the full conversation including tool calls, tool results, and final assistant text.
+- Lead Researcher trace: 12 messages (user-bootstrap, 3 web_search tool calls + results, final synthesis).
+- Social Strategist trace: 4 messages (user-bootstrap, brief greeting, user prompt, full 30-day plan).
+- Mission Control + zero-token gateway integration is functional for real multi-agent agentic workloads, not just round-trip echo.
+
+**Known caveat:** The Social Strategist response includes a Chinese-language "AI generated" disclaimer footer (`本回答由 AI 生成...`). This is a deepseek-v4 provider-side artifact, not a Mission Control issue. Cosmetic.
+
+**Files changed:** None. This is a runtime verification using existing endpoints.
